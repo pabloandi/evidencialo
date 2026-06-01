@@ -67,3 +67,21 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > La clave secret/service-role NO la expone el MCP de Supabase (seguridad):
 > copiarla del dashboard cuando step05 la necesite.
 <!-- tags: vercel, env, supabase | created: 2026-05-31 -->
+
+### fix-20260531-rls-is-staff-private
+> is_staff() para RLS DEBE ser SECURITY DEFINER (si no, recursión vía la
+> política profiles_select_staff que la llama). Pero en `public` la expone el
+> RPC de PostgREST (lint de seguridad). Solución: schema `private` (no expuesto)
+> + execute solo a anon/authenticated. Las políticas referencian
+> private.is_staff(). Funciones de trigger (set_updated_at, handle_new_user):
+> fijar search_path y revocar execute — los triggers disparan sin requerir
+> EXECUTE del invocador (verificado: pgTAP staff-update sigue verde).
+<!-- tags: supabase, rls, security | created: 2026-05-31 -->
+
+### fix-20260531-pgtap-roles
+> Tests RLS pgTAP: las aserciones (is/plan/finish) corren bajo anon/authenticated
+> al cambiar de rol, así que `grant execute on all functions in schema
+> extensions to anon, authenticated` al inicio del test (DB efímera, rollback).
+> Cambiar contexto con `set local role` + `set_config('request.jwt.claims', ...)`;
+> `reset role` para leer como postgres (bypass RLS) entre aserciones.
+<!-- tags: testing, pgtap, rls | created: 2026-05-31 -->

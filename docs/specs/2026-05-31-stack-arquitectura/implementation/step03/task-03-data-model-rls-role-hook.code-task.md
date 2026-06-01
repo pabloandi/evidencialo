@@ -1,6 +1,29 @@
-## Status: PENDING
+## Status: IN_PROGRESS
 ## Blocked-By: step02/task-02-supabase-postgis-migrations.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-05-31):
+DONE y verificado:
+- 0002_core_tables.sql: enums, 5 tablas, índices (GIST location + status +
+  created_at), trigger new-user, trigger updated_at, seed de 5 categorías.
+- 0003_rls_policies.sql: RLS en las 5 tablas + políticas por rol.
+- 0004_harden_functions.sql: remediación de 3 lints de seguridad —
+  is_staff() movida a schema `private` (no expuesta por PostgREST), políticas
+  repuntadas, search_path fijado, execute revocado en funciones de trigger.
+- pgTAP (supabase/tests/rls_test.sql): 9/9 PASS en local — E2, E3, E5 y la
+  lista §4 (history staff-only, media ligada a visibilidad).
+- Aplicado al remoto vía MCP (0002/0003/0004). Security advisor: 0 lints.
+- CI: db.yml ahora corre `supabase test db` (pgTAP) además del assert PostGIS.
+
+DESVIACIÓN del plan (documentada):
+- El hook de rol JWT (0004_role_jwt_hook del plan) se DIFIERE a step04 (auth),
+  donde habilitar el hook en remoto (dashboard) está en alcance. is_staff()
+  usa consulta a profiles (SECURITY DEFINER en `private`) — mismo comportamiento
+  observable, sin dependencia del claim. La numeración 0004 se reasignó a
+  harden_functions; el trigger de visibilidad (step08) sigue siendo 0005.
+-->
+
 
 # Task: Modelo de datos + RLS + hook de rol JWT
 

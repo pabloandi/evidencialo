@@ -37,5 +37,7 @@ jobs:
             psql -U postgres -d postgres -tA \
             -c "select extname from pg_extension where extname = 'postgis';" \
             | grep -qx postgis
+      # pgTAP RLS suite — encodes scenarios E2/E3/E5 and the §4 policy list.
+      - run: pnpm exec supabase test db
       - if: always()
         run: pnpm exec supabase stop
