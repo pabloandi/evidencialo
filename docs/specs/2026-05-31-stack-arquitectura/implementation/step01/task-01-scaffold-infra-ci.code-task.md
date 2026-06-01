@@ -1,6 +1,29 @@
-## Status: PENDING
+## Status: IN_PROGRESS
 ## Blocked-By:
 ## Completed:
+
+<!--
+PROGRESO (2026-05-31):
+DONE y verificado:
+- Scaffold Next.js 16.2.6 (App Router, TS, Tailwind, src/) en la raíz.
+- vercel.json versionado (framework nextjs + cron diario reservado).
+- CI gate en GitHub Actions: quality (lint/typecheck/test 2/2/build) PASA en
+  runner limpio; deploy needs:quality, no-op hasta tener VERCEL_TOKEN. Run verde.
+- Repo: github.com/pabloandi/evidencialo (privado), main empujado.
+- Deploy PREVIEW en Vercel (scope andresamaw-1043s-projects), readyState READY.
+- AC3 (vercel.json primer commit infra): cumplido.
+- AC2 (gate bloquea deploy): estructura needs:quality + quality verificado verde.
+
+PENDIENTE (acciones del usuario):
+- AC1 (app en URL de PRODUCCIÓN): usuario eligió "preview primero". Promover con
+  `vercel deploy --prod --scope andresamaw-1043s-projects` cuando dé el visto bueno.
+- Crear VERCEL_TOKEN en el dashboard de Vercel y añadirlo como secret de GitHub
+  (gh secret set VERCEL_TOKEN) para activar el auto-deploy de CI.
+- Preview tras muro de auth (Vercel Deployment Protection, 401) — ajustar si se
+  quiere acceso público / QA de navegador.
+- Follow-up menor: acciones de Actions corren en Node 20 (deprecado jun-2026).
+-->
+
 
 # Task: Scaffold Next.js + infraestructura declarativa + gate CI + deploy vacío
 
