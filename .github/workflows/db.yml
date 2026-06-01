@@ -1,0 +1,41 @@
+name: DB Migrations
+
+# Runs only when migrations or Supabase config change — spinning up the local
+# Supabase stack on every push would waste Actions minutes. Validates that all
+# migrations apply cleanly from scratch on the real Supabase stack (the app
+# migrations reference Supabase roles/schemas a vanilla Postgres lacks).
+on:
+  push:
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/config.toml"
+      - ".github/workflows/db.yml"
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/config.toml"
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `supabase start` applies every migration on boot; a broken migration
+      # fails the job here.
+      - run: pnpm exec supabase start
+      - name: Assert PostGIS is enabled
+        run: |
+          docker exec supabase_db_evidencialo \
+            psql -U postgres -d postgres -tA \
+            -c "select extname from pg_extension where extname = 'postgis';" \
+            | grep -qx postgis
+      - if: always()
+        run: pnpm exec supabase stop
