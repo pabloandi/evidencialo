@@ -134,8 +134,10 @@ Route Handlers son adaptadores delgados sobre los servicios.
   `location geography(Point, 4326)`, `address` (nullable), `is_visible` (bool,
   default false), `created_at`, `updated_at`, `resolved_at` (nullable).
 - **`report_media`** — `id`, `report_id`, `storage_path`, `type` (`image` |
-  `video`), `width`, `height`, `duration_s` (nullable), `processed` (bool,
-  default false), `created_at`.
+  `video`), `width`, `height`, `duration_s` (nullable), `processing_state`
+  (`pending` | `processed` | `failed`, default `pending`), `created_at`. El gate
+  de visibilidad trata `processed` como condición de publicación y `failed` como
+  bloqueo permanente.
 - **`report_status_history`** — `id`, `report_id`, `from_status`, `to_status`,
   `changed_by` (→ profiles), `note` (nullable), `created_at`. Auditoría para el
   panel.
@@ -159,7 +161,10 @@ service-role, pero RLS protege ante cualquier fallo o acceso directo):
 - **`report_status_history`**: lectura solo staff/admin; escritura por la API.
 
 El rol se modela en `profiles.role` y se expone como claim del JWT de Supabase
-para que RLS lo evalúe sin un join costoso.
+(custom access token hook) para que RLS lo evalúe sin un join costoso. Cuando un
+admin cambia el rol de un usuario, el claim queda obsoleto hasta el siguiente
+refresco de token; el cambio de rol fuerza un refresh de sesión para que RLS no
+evalúe un rol caducado.
 
 ---
 
@@ -178,12 +183,38 @@ para que RLS lo evalúe sin un join costoso.
    público), comprime, genera thumbnail y guarda en Storage con service-role.
 4. **Video**: se sube vía URL firmada directa a Storage; una Supabase Edge
    Function sanea metadatos del contenedor y marca `processed = true`.
-5. Cuando **toda** la media del reporte tiene `processed = true`, la API marca
-   `reports.is_visible = true`. Solo entonces aparece en mapa público y panel.
+5. Cuando **toda** la media del reporte tiene `processed = true`, el reporte pasa
+   a `is_visible = true`. El flip lo realiza un **trigger de base de datos** sobre
+   `report_media.processed`: tras cada actualización, comprueba si quedan filas
+   sin procesar para ese `report_id` y, si no quedan, marca el reporte visible.
+   Esto cierra la condición de carrera entre la ruta de imagen (`/api/media`) y la
+   de video (Edge Function), que procesan en paralelo: ninguna de las dos decide
+   la visibilidad, lo hace el trigger como único punto de verdad.
 
 **Justificación del gate de visibilidad:** un reporte no se publica hasta que su
 media está procesada y libre de EXIF. Evita exponer PII de localización y media
 sin sanear durante la ventana de subida.
+
+### Límites de media (MVP)
+
+- **Imagen**: formatos `jpeg`/`png`/`webp`; tamaño máximo 10 MB por archivo;
+  máximo 3 imágenes por reporte.
+- **Video**: formato `mp4`; duración máxima 60 s; tamaño máximo 50 MB; 1 video
+  por reporte. Estos topes acotan el coste de Storage y la superficie de abuso en
+  envíos anónimos. Se validan en `/api/reports` antes de emitir la URL firmada.
+
+### Caminos de fallo del procesado
+
+- **Imagen** (`/api/media`): si el strip de EXIF o la subida falla, la respuesta
+  es 5xx, la media no queda `processed` y el cliente reintenta (idempotente por
+  `report_id` + índice de archivo). El reporte permanece invisible.
+- **Video** (Edge Function): si el saneado de metadatos falla, la media no queda
+  `processed` y el reporte permanece invisible. La función reintenta con backoff;
+  tras N intentos, marca la media como `failed` y registra el error para revisión
+  en el panel. Un reporte con media `failed` nunca se publica.
+- **Reportes huérfanos**: un job programado (Vercel Cron) elimina reportes con
+  `is_visible = false` cuya media sigue sin procesar tras 24 h, junto con sus
+  objetos parciales en Storage. Evita acumulación de envíos abandonados.
 
 ### Flujo — cambio de estado (panel)
 
@@ -205,6 +236,9 @@ sin sanear durante la ventana de subida.
   visibles a medias.
 - **Captcha / rate-limit** → 403 / 429 con mensaje claro.
 - **RLS como red de seguridad** ante cualquier fallo de la capa API.
+- **Idempotencia**: `POST /api/reports` y las subidas a `/api/media` aceptan una
+  clave de idempotencia (cliente) para que los reintentos por red no creen
+  reportes ni media duplicados.
 - **Observabilidad**: Vercel Observability (logs, trazas) + logs de Supabase.
   Errores de servidor se registran con contexto del `report_id`.
 
@@ -290,6 +324,25 @@ Given reportes visibles en distintas coordenadas,
 When el mapa público pide reportes para un bounding box,
 Then solo devuelve los reportes visibles dentro de ese recuadro (usando el
 índice GIST de PostGIS).
+
+**E9 — Reporte huérfano se limpia tras 24 h**
+Given un reporte con `is_visible = false` cuya media sigue en `pending` desde
+hace más de 24 h,
+When corre el job programado de limpieza,
+Then el reporte y sus objetos parciales en Storage se eliminan.
+
+**E10 — Video que falla el saneado nunca se publica**
+Given un reporte cuyo único video agota los reintentos de saneado y queda en
+`processing_state = failed`,
+When el trigger de visibilidad evalúa el reporte,
+Then el reporte permanece `is_visible = false` y el fallo queda registrado para
+revisión en el panel.
+
+**E11 — Reintento idempotente no duplica**
+Given un cliente que reintenta `POST /api/reports` con la misma clave de
+idempotencia tras un fallo de red,
+When la API recibe el segundo intento,
+Then no se crea un reporte duplicado y se devuelve el reporte ya creado.
 
 ---
 
