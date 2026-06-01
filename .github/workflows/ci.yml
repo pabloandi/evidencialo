@@ -27,20 +27,38 @@ jobs:
       - run: pnpm build
 
   # Deploys to Vercel production. `needs: quality` is the gate — this job is
-  # skipped entirely if quality fails, and it only runs on main.
+  # skipped entirely if quality fails, and it only runs on main. The deploy
+  # steps no-op until VERCEL_TOKEN is set, so main stays green before the
+  # secret is provisioned.
   deploy:
     needs: quality
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check Vercel credentials
+        id: check
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::notice::VERCEL_TOKEN not set — skipping deploy. Add the secret to enable production deploys."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+      - if: steps.check.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install -g vercel@latest
-      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - if: steps.check.outputs.enabled == 'true'
+        run: npm install -g vercel@latest
+      - if: steps.check.outputs.enabled == 'true'
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - if: steps.check.outputs.enabled == 'true'
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+      - if: steps.check.outputs.enabled == 'true'
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
