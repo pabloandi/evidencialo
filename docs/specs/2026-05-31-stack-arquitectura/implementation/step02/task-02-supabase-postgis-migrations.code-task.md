@@ -1,6 +1,27 @@
-## Status: PENDING
+## Status: IN_PROGRESS
 ## Blocked-By: step01/task-01-scaffold-infra-ci.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-05-31):
+DONE y verificado:
+- supabase CLI 2.102.0 (dev dep) + supabase init (project_id: evidencialo).
+- 0001_extensions.sql habilita PostGIS en schema extensions.
+- AC1: verificado local — migraciones aplican limpio, postgis_version()=3.3.7.
+- AC2: workflow .github/workflows/db.yml levanta el stack y asevera PostGIS;
+  job "DB Migrations" verde en CI (3m18s). Corre solo si cambian migraciones.
+- Scripts db:start/db:reset/db:stop. Stack local detenido (datos en volumen).
+
+PENDIENTE (bloqueado en cuenta Supabase del usuario):
+- AC3: crear proyecto Supabase cloud, `supabase link`, `supabase db push`
+  (aplicar migraciones al remoto), y cargar SUPABASE URL + anon/service keys
+  como env vars en Vercel. Requiere `supabase login` (access token del
+  dashboard) o que el usuario cree el proyecto y comparta las claves.
+
+NOTA: step03+ puede desarrollarse y verificarse contra el stack LOCAL sin el
+proyecto cloud. La nube se puede diferir y hacer en lote más adelante.
+-->
+
 
 # Task: Proyecto Supabase enlazado + PostGIS + tooling de migraciones
 
