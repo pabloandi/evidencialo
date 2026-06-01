@@ -12,14 +12,22 @@ DONE y verificado:
   job "DB Migrations" verde en CI (3m18s). Corre solo si cambian migraciones.
 - Scripts db:start/db:reset/db:stop. Stack local detenido (datos en volumen).
 
-PENDIENTE (bloqueado en cuenta Supabase del usuario):
-- AC3: crear proyecto Supabase cloud, `supabase link`, `supabase db push`
-  (aplicar migraciones al remoto), y cargar SUPABASE URL + anon/service keys
-  como env vars en Vercel. Requiere `supabase login` (access token del
-  dashboard) o que el usuario cree el proyecto y comparta las claves.
+AC3 (vía MCP de Supabase, autorizado por el usuario):
+- Proyecto cloud creado: ref zxhwekkbcjfpwbimtcnn, región us-east-1.
+- Migración PostGIS aplicada al remoto (apply_migration); postgis 3.3.7
+  verificado en remoto.
+- Env vars en Vercel PRODUCTION: NEXT_PUBLIC_SUPABASE_URL +
+  NEXT_PUBLIC_SUPABASE_ANON_KEY (clave publishable). ✓
 
-NOTA: step03+ puede desarrollarse y verificarse contra el stack LOCAL sin el
-proyecto cloud. La nube se puede diferir y hacer en lote más adelante.
+PENDIENTE (no bloquea step03+):
+- Env vars de Vercel PREVIEW: el CLI en modo agente entra en bucle pidiendo
+  rama git; añadir desde dashboard o con rama concreta.
+- SUPABASE_SERVICE_ROLE_KEY (secret): el MCP no la expone; copiar del dashboard
+  cuando step05 (escrituras server-side) la necesite.
+- .env.local para dev local apuntando al stack local (cuando se ejecute la app).
+
+NOTA: step03+ se desarrolla y verifica contra el stack LOCAL. Las migraciones
+nuevas se aplican al remoto vía apply_migration (MCP), SQL idéntico al local.
 -->
 
 

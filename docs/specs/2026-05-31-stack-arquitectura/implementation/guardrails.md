@@ -48,3 +48,22 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > pnpm/action-setup@v4) corren en Node 20, deprecado desde jun-2026. Follow-up:
 > subir versiones de acciones o forzar Node 24 cuando toque.
 <!-- tags: ci, maintenance | created: 2026-05-31 -->
+
+### fix-20260531-supabase-cloud
+> Proyecto Supabase cloud creado vía MCP: org `amaw`
+> (msjbvfpopxmhpwpujpbf), project ref **zxhwekkbcjfpwbimtcnn**, región
+> **us-east-1** (la más cercana a Colombia — los usuarios son de una ciudad
+> colombiana, NO España). URL https://zxhwekkbcjfpwbimtcnn.supabase.co. Las
+> migraciones al remoto se aplican con `apply_migration` del MCP (no hay
+> `supabase login` CLI; mantener el SQL idéntico a los archivos versionados
+> locales). PostGIS 3.3.7 verificado en remoto.
+<!-- tags: supabase, cloud, region | created: 2026-05-31 -->
+
+### fix-20260531-vercel-env-preview
+> `vercel env add NAME preview` en modo agente (non-interactive por defecto en
+> 54.6.x) entra en bucle `git_branch_required` aunque pases `--value ... --yes`.
+> Production funciona (sin dimensión de rama). Workaround: añadir las env de
+> Preview desde el dashboard, o pasar una rama git concreta como 3er argumento.
+> La clave secret/service-role NO la expone el MCP de Supabase (seguridad):
+> copiarla del dashboard cuando step05 la necesite.
+<!-- tags: vercel, env, supabase | created: 2026-05-31 -->
