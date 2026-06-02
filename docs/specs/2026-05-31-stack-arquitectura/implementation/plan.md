@@ -33,8 +33,9 @@ Responsabilidad única por archivo; los que cambian juntos viven juntos.
 │   │   ├── 0001_extensions.sql      # PostGIS
 │   │   ├── 0002_core_tables.sql     # profiles, categories, reports, report_media, history
 │   │   ├── 0003_rls_policies.sql    # políticas por rol
-│   │   ├── 0004_role_jwt_hook.sql   # custom access token hook (claim de rol)
-│   │   └── 0005_visibility_trigger.sql # trigger sobre report_media.processing_state
+│   │   ├── 0004_harden_functions.sql # remediación de lints de seguridad (step03)
+│   │   ├── 0005_role_jwt_hook.sql   # custom access token hook (claim de rol, step04)
+│   │   └── 0006_visibility_trigger.sql # trigger sobre report_media.processing_state
 │   ├── functions/sanitize-video/    # Edge Function: saneado de metadatos de video
 │   │   └── index.ts
 │   └── seed.sql                     # categorías iniciales
@@ -182,7 +183,7 @@ Responsabilidad única por archivo; los que cambian juntos viven juntos.
     archivo: reintentar la misma subida no crea media duplicada (spec §6).
 
 - [ ] **Paso 8 — Trigger de visibilidad** · S · dep: 7
-  Migración `0005`: trigger sobre `report_media.processing_state` que pone
+  Migración `0006`: trigger sobre `report_media.processing_state` que pone
   `reports.is_visible=true` solo cuando ninguna media del reporte queda en
   `pending` ni `failed`. Único punto de verdad de la visibilidad; testeable de
   forma aislada con pgTAP sin que exista aún la Edge Function de video.

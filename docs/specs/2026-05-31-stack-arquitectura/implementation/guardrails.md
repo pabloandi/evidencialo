@@ -85,3 +85,75 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > Cambiar contexto con `set local role` + `set_config('request.jwt.claims', ...)`;
 > `reset role` para leer como postgres (bypass RLS) entre aserciones.
 <!-- tags: testing, pgtap, rls | created: 2026-05-31 -->
+
+### fix-20260601-nextjs16-proxy
+> Next 16 (v16.0.0) DEPRECÓ `middleware` y lo renombró a **`proxy`**: archivo de
+> convención `src/proxy.ts` que exporta `proxy(request)` (+ `config.matcher`).
+> Runtime Node.js por defecto (declarar `runtime` en proxy LANZA error). El doc
+> oficial advierte: autorizar dentro del Server Component, no confiar solo en el
+> proxy. Confirmado en `node_modules/next/dist/docs/.../proxy.md`. El hook
+> validador del plugin marca cualquier `*/proxy.ts` con import de `next/server`
+> como "renómbralo" — falso positivo para el helper `lib/supabase/proxy.ts`.
+<!-- tags: nextjs, proxy, build | created: 2026-06-01 -->
+
+### fix-20260601-supabase-ssr-getclaims
+> @supabase/ssr 0.10.x en Next 16: clientes con `getAll/setAll` + `await
+> cookies()` (cookies() es async). Server-side usar **`getClaims()`** (NO
+> `getSession()`, no confiable en servidor); claims en `data.claims`, custom
+> claim en `data.claims.user_role`. getClaims valida la firma del JWT —
+> localmente si el proyecto firma con **claves asimétricas (ES256)**, pero
+> delega a `getUser()` (RTT al Auth server) si es HS256 legacy. getClaims puede
+> THROW (no solo devolver error) en fallo de red al traer JWKS → envolver en
+> try/catch tanto en el proxy como en authz, y fallar CERRADO.
+<!-- tags: supabase, auth, nextjs, performance | created: 2026-06-01 -->
+
+### fix-20260601-supabase-role-hook
+> `custom_access_token_hook(event jsonb) returns jsonb` expone profiles.role
+> como claim `user_role`. El Auth server lo corre como rol `supabase_auth_admin`:
+> `grant execute ... to supabase_auth_admin` + `revoke ... from anon,
+> authenticated, public` (no exponer vía RPC) + grant select y policy en la
+> tabla de roles. Endurecer SIEMPRE: guard del cast `(event->>'user_id')::uuid`
+> y `coalesce(event->'claims','{}')` — un evento malformado que lance ABORTA la
+> emisión de token para TODOS los logins. Local: habilitar en config.toml
+> `[auth.hook.custom_access_token]` (uri `pg-functions://postgres/public/...`).
+> Remoto: toggle MANUAL en Dashboard > Authentication > Hooks (MCP no lo expone).
+> authz lee el claim con fallback a profiles → funciona aunque el toggle remoto
+> esté apagado (el claim es pura optimización).
+<!-- tags: supabase, auth, security, rls | created: 2026-06-01 -->
+
+### fix-20260601-supabase-start-vs-reset
+> `supabase start` restaura el VOLUMEN previo (backup de `supabase stop`) y NO
+> re-aplica migraciones nuevas añadidas desde el último reset → la función/tabla
+> nueva "no existe". Tras añadir una migración, correr **`supabase db reset`**
+> (recrea la DB y aplica 0001..N + seed) antes de `supabase test db`.
+<!-- tags: supabase, cli, testing | created: 2026-06-01 -->
+
+### fix-20260601-vitest-path-alias
+> tsconfig define `@/* -> ./src/*`, pero vitest NO lo hereda. Añadir a
+> `vitest.config.ts`: `resolve.alias["@"] = fileURLToPath(new URL("./src",
+> import.meta.url))`. Sin esto, importar `@/...` en un test falla con "Cannot
+> find package". Importar `next/headers` desde un módulo bajo test es inofensivo
+> en vitest si no se LLAMA (solo se evalúa el import).
+<!-- tags: testing, vitest, build | created: 2026-06-01 -->
+
+### fix-20260601-migration-renumber
+> Numeración real de migraciones (el plan original difería): 0001 extensions,
+> 0002 core_tables, 0003 rls_policies, 0004 harden_functions (step03), **0005
+> role_jwt_hook (step04)**, **0006 visibility_trigger (step08)**. El hook de rol,
+> diferido de step03, tomó 0005, empujando el trigger de visibilidad a 0006.
+<!-- tags: supabase, migrations, planning | created: 2026-06-01 -->
+
+### fix-20260601-route-group-url
+> Un route group `(panel)` NO añade segmento de URL. Para que exista `/panel`
+> (lo exige la AC) el page va en `src/app/(panel)/panel/page.tsx`; el gate
+> `src/app/(panel)/layout.tsx` envuelve todo el grupo. Poner page directo en
+> `(panel)/page.tsx` mapea a `/` y COLISIONA con `app/page.tsx`.
+<!-- tags: nextjs, routing | created: 2026-06-01 -->
+
+### fix-20260601-supabase-publishable-key
+> Supabase migra de claves `anon`/`service_role` a `sb_publishable_*` /
+> `sb_secret_*`. Los docs nuevos usan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+> Aquí seguimos con `NEXT_PUBLIC_SUPABASE_ANON_KEY` (ya provisionada en Vercel
+> prod en step02); ambas funcionan en el periodo de transición. Migrar a
+> publishable cuando convenga (es la dirección futura).
+<!-- tags: supabase, env | created: 2026-06-01 -->

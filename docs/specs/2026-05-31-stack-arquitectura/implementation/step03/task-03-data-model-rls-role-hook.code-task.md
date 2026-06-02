@@ -21,7 +21,8 @@ DESVIACIÓN del plan (documentada):
   donde habilitar el hook en remoto (dashboard) está en alcance. is_staff()
   usa consulta a profiles (SECURITY DEFINER en `private`) — mismo comportamiento
   observable, sin dependencia del claim. La numeración 0004 se reasignó a
-  harden_functions; el trigger de visibilidad (step08) sigue siendo 0005.
+  harden_functions; el hook de rol es 0005 (step04) y el trigger de
+  visibilidad (step08) pasa a 0006.
 -->
 
 

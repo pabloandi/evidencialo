@@ -27,7 +27,7 @@ Function de video.
 **Note:** You MUST read the detailed design before implementing.
 
 ## Technical Requirements
-1. Migración `0005_visibility_trigger.sql`: trigger AFTER UPDATE sobre
+1. Migración `0006_visibility_trigger.sql`: trigger AFTER UPDATE sobre
    `report_media.processing_state`.
 2. Lógica: marcar el reporte visible solo si no quedan filas `pending` ni `failed`.
 3. Tests pgTAP que cubren las combinaciones de estados.
@@ -64,7 +64,7 @@ Function de video.
 - **Required Skills**: Postgres triggers, pgTAP
 - **Related Tasks**: step07, step09
 - **Step**: 08 of 15
-- **Files to Modify**: `supabase/migrations/0005_visibility_trigger.sql`, `tests/rls/visibility_trigger.sql`
+- **Files to Modify**: `supabase/migrations/0006_visibility_trigger.sql`, `tests/rls/visibility_trigger.sql`
 - **Files to Read**: `docs/specs/2026-05-31-stack-arquitectura-design.md`, `docs/specs/2026-05-31-stack-arquitectura/implementation/plan.md`
 - **Context Estimate**: S
 - **Scenario-Strategy**: required
