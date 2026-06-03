@@ -1,6 +1,59 @@
-## Status: PENDING
+## Status: DONE
 ## Blocked-By: step05/task-05-report-service-create-api.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-06-02):
+DONE y verificado:
+- Holdout SDD: docs/specs/.../scenarios/media-process.scenarios.md (SCEN-001..007)
+  + media-process-hardening.scenarios.md (SCEN-H01..H04).
+- src/lib/exif.ts: processImage(raw) con sharp — decode ÚNICO + clone para full y
+  thumbnail (encode en paralelo); limitInputPixels=50MP (anti decompression-bomb);
+  full reescalado a 2048px; re-encode PRESERVANDO formato de entrada (jpeg/png/
+  webp) con content-type acorde; thumbnail webp ≤400 en path derivado. EXIF/GPS
+  se elimina por defecto (toBuffer no preserva metadata). sharp.concurrency(1)+
+  cache(false) para memoria serverless.
+- src/lib/services/mediaService.ts: processMedia({reportId, mediaId}). Taxonomía
+  de errores: NotFound(404), Unsupported(422), NotReady(409, queda pending),
+  Decode/bomb/>10MB → markFailed terminal(422), WriteError(503, queda pending,
+  retryable). Uploads en Promise.all; update final guardado por pending; markFailed
+  inspecciona el {error} de supabase. Short-circuit idempotente si processed.
+- src/app/api/media/route.ts: mapea los 5 errores + 200.
+- Tests: vitest 108 (exif, mediaService, route + integración local: GPS-strip
+  contra objeto real, formato webp preservado, not-ready, retryable, corrupto→
+  failed+invisible). lint/typecheck/build exit 0.
+- Quality gate: 4 agentes. code-review APROBÓ; security LIMPIO (privacidad
+  garantizada). Fixes de edge-case/performance: (A) limitInputPixels+recheck de
+  bytes; (B) decode único + uploads paralelos; (C) resize 2048; (D) decode-error
+  terminal vs write-error retryable; (E) formato preservado; (F) markFailed
+  chequea {error}; (H) guard de auto-colisión de thumbnailPath.
+
+DESVIACIÓN de diseño (documentada, consistente con §5.3 actualizado en step05):
+- /api/media NO recibe bytes — recibe {report_id, media_id} y PROCESA el objeto
+  raw que el cliente subió por signed URL al bucket privado. Lee→limpia EXIF→
+  comprime→thumbnail→sobrescribe el raw→marca processed. El raw-con-EXIF vive en
+  bucket privado y is_visible=false hasta que el trigger de step08 (0007) lo
+  publique; nada público lleva EXIF.
+
+DIFERIDO (documentado, no silenciado):
+- Claim de concurrencia completo (estado 'processing') → necesita valor de enum
+  → se diseña con el trigger de visibilidad (step08). Mitigación parcial: update
+  final guardado por pending (segundo escritor concurrente = no-op). El output es
+  determinista + upsert → sin corrupción, solo doble trabajo raro bajo overlap.
+- Gating de auth/rate-limit en /api/media → UUIDs no adivinables + idempotente;
+  revisar si se quiere endurecer.
+
+ACEPTACIÓN:
+- AC1 (E1 parcial — imagen sin EXIF): SATISFECHO + verificado contra storage real
+  (objeto descargado sin GPS; el fixture SÍ tenía GPS — no vacuo).
+- AC2 (subida idempotente no duplica): SATISFECHO (processMedia hace UPDATE, no
+  INSERT; count=1 tras reintento).
+- AC3 (processing_state=processed): SATISFECHO + integración.
+
+ACCIÓN PENDIENTE DEL USUARIO:
+- sharp es dependencia de PRODUCCIÓN (Vercel la bundlea en runtime Node). Sin envs
+  nuevas más allá de las existentes (SUPABASE_SERVICE_ROLE_KEY).
+-->
 
 # Task: POST /api/media — subida de imagen con strip de EXIF + thumbnail
 
