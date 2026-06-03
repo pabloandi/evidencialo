@@ -221,3 +221,28 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > siempre está, así que es inalcanzable en prod; el captcha igual amuralla).
 > Ver clientIp() en src/app/api/reports/route.ts.
 <!-- tags: nextjs, vercel, security, ratelimit | created: 2026-06-02 -->
+
+### fix-20260602-sharp-serverless
+> sharp en serverless (Vercel Node): (1) `toBuffer()` ELIMINA metadata (EXIF/GPS)
+> por defecto — el strip es gratis salvo que llames keepExif/withMetadata. (2)
+> SIEMPRE pasar `limitInputPixels` (~50MP) — el default ~268MP decodifica a ~1GB
+> RGBA y revienta el presupuesto de 1024MB (decompression-bomb DoS). (3) Decodificá
+> UNA vez: `const base = sharp(raw,{limitInputPixels}).autoOrient(); base.clone()`
+> para full+thumbnail en paralelo (no `sharp(raw)` dos veces). (4) `sharp.concurrency(1)
+> + sharp.cache(false)` en el top del módulo (higiene de memoria). (5) Re-encode
+> PRESERVANDO el formato de entrada para que extensión+content-type+bytes coincidan
+> (un png/webp re-encodeado a jpeg en path .webp es un mismatch durable). (6) sharp
+> es dependencia de PRODUCCIÓN (Vercel la bundlea). Ver src/lib/exif.ts.
+<!-- tags: sharp, image, vercel, security, performance | created: 2026-06-02 -->
+
+### fix-20260602-media-error-taxonomy
+> En un procesador async de media, distinguí clases de error por su REINTENTABILIDAD,
+> no las colapses todas a 'failed': decode/corrupto/oversize → 'failed' TERMINAL
+> (reintentar no ayuda); error transitorio de WRITE (upload/update) → dejar 'pending'
+> (reintentable, los upserts son idempotentes); objeto raw ausente (cliente abandonó
+> la subida) → 'not ready' (409), dejar 'pending'. Marcar 'failed' ante un blip de
+> storage mata el reporte para siempre. Además: supabase-js `.update()` devuelve
+> `{error}` y NO lanza → un try/catch alrededor NO lo atrapa; chequear el error
+> retornado. Patrón a reusar en el Edge Function de video (step09). Ver
+> src/lib/services/mediaService.ts.
+<!-- tags: supabase, media, error-handling, reliability | created: 2026-06-02 -->
