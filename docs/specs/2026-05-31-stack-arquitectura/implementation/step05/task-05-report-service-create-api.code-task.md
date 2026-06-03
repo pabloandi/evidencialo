@@ -1,6 +1,54 @@
-## Status: PENDING
+## Status: DONE
 ## Blocked-By: step03/task-03-data-model-rls-role-hook.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-06-02):
+DONE y verificado (commit f909488):
+- Holdout SDD: docs/specs/.../scenarios/report-create.scenarios.md (SCEN-001..009)
+  + report-create-hardening.scenarios.md (SCEN-010 key vacía, SCEN-011 numéricos
+  malformados, SCEN-012 atomicidad). Comiteados antes de implementar.
+- Migración 0006_report_idempotency_and_storage.sql: reports.idempotency_key +
+  índice único PARCIAL (where not null → idempotencia race-safe, múltiples NULL
+  para anónimos); bucket privado 'report-media'; RPC create_report() SECURITY
+  DEFINER (search_path='', execute solo a service_role) que inserta report+media
+  en UNA transacción con on conflict do nothing (atomicidad SCEN-012 + replay).
+- reportSchema.ts (zod): checks de negocio ordenados con mensajes ES exactos +
+  guards numéricos int/positive (rechaza 0/negativo/float → invalid_payload, no 500).
+- supabase/admin.ts: cliente service-role (bypass RLS, solo server). Workaround
+  NoopWebSocket para Node 20 (createClient construye RealtimeClient eager).
+- reportService.ts: resuelve categoría (CategoryInvalid antes de escribir), llama
+  la RPC, firma upload URLs en PARALELO (Promise.all) con upsert (retry tras subida
+  parcial seguro).
+- route.ts: errores 422 estructurados; 201 fresh / 200 replay idempotente;
+  Idempotency-Key vacío/whitespace → undefined → NULL (sin colisión cross-request).
+- Tests: vitest 38 (schema/service/route, hermético) + integración local (invisible,
+  idempotente count=1, rollback atómico). lint/typecheck/build exit 0.
+- Quality gate: 4 agentes (code-review, edge-case, performance, security).
+  Security LIMPIO. Los hallazgos de correctness (atomicidad, replay race, numéricos,
+  key vacía) se corrigieron — ver SCEN-010/011/012.
+
+DESVIACIÓN de diseño (documentada, actualiza §5.3):
+- Las imágenes NO suben bytes-a-través-de-/api/media; TODA la media sube por signed
+  upload URL directo al bucket privado. El strip de EXIF pasa a procesamiento async
+  server-side (step07 leerá el raw → limpia → marca processed). Razón: honra AC3
+  uniforme + respeta límites de body de Vercel (imágenes hasta 10MB).
+- Numeración migraciones: 0006 = idempotency+storage (step05); el trigger de
+  visibilidad (step08) pasó a 0007.
+
+ACEPTACIÓN:
+- AC1 (E11 reintento idempotente): SATISFECHO + runtime (replay 200 mismo id,
+  count=1) + RPC on-conflict race-safe.
+- AC2 (límites de media → 4xx): SATISFECHO + unit + runtime (oversize 422).
+- AC3 (nace invisible + URL firmada): SATISFECHO + integración (is_visible=false,
+  pending) + runtime (201 con signedUrl).
+
+ACCIÓN PENDIENTE DEL USUARIO:
+- Añadir SUPABASE_SERVICE_ROLE_KEY a .env.local (local, valor de `supabase status`)
+  y a Vercel env (prod, server-side, NO NEXT_PUBLIC_). Sin ella createAdminSupabase()
+  lanza. (No puedo escribir archivos .env — están en deny-list.)
+- Migración 0006 aplicada al remoto (ver abajo); confirmar bucket+RPC en dashboard.
+-->
 
 # Task: reportService + POST /api/reports (validación, límites, idempotencia)
 
