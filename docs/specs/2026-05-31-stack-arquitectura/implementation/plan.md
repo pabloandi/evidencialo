@@ -35,7 +35,8 @@ Responsabilidad única por archivo; los que cambian juntos viven juntos.
 │   │   ├── 0003_rls_policies.sql    # políticas por rol
 │   │   ├── 0004_harden_functions.sql # remediación de lints de seguridad (step03)
 │   │   ├── 0005_role_jwt_hook.sql   # custom access token hook (claim de rol, step04)
-│   │   └── 0006_visibility_trigger.sql # trigger sobre report_media.processing_state
+│   │   ├── 0006_report_idempotency_and_storage.sql # idempotency_key + bucket privado (step05)
+│   │   └── 0007_visibility_trigger.sql # trigger sobre report_media.processing_state (step08)
 │   ├── functions/sanitize-video/    # Edge Function: saneado de metadatos de video
 │   │   └── index.ts
 │   └── seed.sql                     # categorías iniciales
@@ -183,7 +184,7 @@ Responsabilidad única por archivo; los que cambian juntos viven juntos.
     archivo: reintentar la misma subida no crea media duplicada (spec §6).
 
 - [ ] **Paso 8 — Trigger de visibilidad** · S · dep: 7
-  Migración `0006`: trigger sobre `report_media.processing_state` que pone
+  Migración `0007`: trigger sobre `report_media.processing_state` que pone
   `reports.is_visible=true` solo cuando ninguna media del reporte queda en
   `pending` ni `failed`. Único punto de verdad de la visibilidad; testeable de
   forma aislada con pgTAP sin que exista aún la Edge Function de video.

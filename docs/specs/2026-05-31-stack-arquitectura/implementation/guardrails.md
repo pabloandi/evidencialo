@@ -139,8 +139,10 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 ### fix-20260601-migration-renumber
 > Numeración real de migraciones (el plan original difería): 0001 extensions,
 > 0002 core_tables, 0003 rls_policies, 0004 harden_functions (step03), **0005
-> role_jwt_hook (step04)**, **0006 visibility_trigger (step08)**. El hook de rol,
-> diferido de step03, tomó 0005, empujando el trigger de visibilidad a 0006.
+> role_jwt_hook (step04)**, **0006 report_idempotency_and_storage (step05)**,
+> **0007 visibility_trigger (step08)**. El hook de rol, diferido de step03, tomó
+> 0005; idempotency+bucket de reportes tomó 0006 en step05, empujando el trigger
+> de visibilidad a 0007.
 <!-- tags: supabase, migrations, planning | created: 2026-06-01 -->
 
 ### fix-20260601-route-group-url
