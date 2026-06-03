@@ -159,3 +159,44 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > prod en step02); ambas funcionan en el periodo de transición. Migrar a
 > publishable cuando convenga (es la dirección futura).
 <!-- tags: supabase, env | created: 2026-06-01 -->
+
+### fix-20260602-supabase-js-node20-ws
+> `createClient` de @supabase/supabase-js construye un `RealtimeClient` de forma
+> EAGER; en Node < 22 sin `WebSocket` global, su constructor LANZA
+> ("Node.js 20 detected without native WebSocket support") al crear el cliente,
+> aunque nunca abras un canal. El cliente admin (write path) no usa Realtime →
+> pasarle un transporte inerte `NoopWebSocket` (que solo lanza al conectar)
+> satisface el lookup sin añadir `ws`. Aplica a CUALQUIER cliente service-role
+> en serverless Node 20 (Vercel) — step06/07 lo necesitarán. Ver src/lib/supabase/admin.ts.
+<!-- tags: supabase, nextjs, build, node | created: 2026-06-02 -->
+
+### fix-20260602-write-path-signed-upload
+> DECISIÓN de arquitectura (actualiza diseño §5.3): TODA la media (imagen Y video)
+> sube por **signed upload URL directo al bucket privado** que emite
+> `POST /api/reports`, NO bytes-a-través-de-/api/media. El strip de EXIF pasa a
+> proceso async server-side (step07 lee el raw → limpia → marca processed). Razón:
+> honra AC3 ("URL firmada") uniforme + las Route Handlers de Vercel serverless
+> tienen tope de body (~4.5MB) y las imágenes llegan a 10MB → bytes-por-el-handler
+> es inviable. Idempotencia + multi-fila atómica via RPC Postgres `create_report`
+> (SECURITY DEFINER, search_path='', execute solo a service_role) con
+> `on conflict (idempotency_key) where ... do nothing` — una transacción, sin
+> huérfanos, sin race de replay.
+<!-- tags: supabase, vercel, storage, architecture | created: 2026-06-02 -->
+
+### fix-20260602-nullish-empty-header
+> Trampa: `request.headers.get("X") ?? undefined` devuelve `""` para un header
+> presente-pero-vacío (`??` solo atrapa null/undefined, NO string vacío). Un
+> `Idempotency-Key:` en blanco se guardaba como key real `""` → el índice único
+> parcial lo trata como valor → el 2º request con header vacío de CUALQUIER cliente
+> chocaba (23505) y recibía el reporte+upload URLs del primero (colisión cross-user).
+> Fix: `const raw = h.get("X")?.trim(); const key = raw ? raw : undefined;`. Normalizar
+> SIEMPRE headers de idempotencia/capacidad antes de persistir.
+<!-- tags: nextjs, security, idempotency | created: 2026-06-02 -->
+
+### fix-20260602-jsonb-recordset-ordinality
+> `WITH ORDINALITY` rechaza una lista de definición de columnas pegada a
+> `jsonb_to_recordset(...) AS (...)`. La forma correcta es
+> `ROWS FROM (jsonb_to_recordset(p) AS (col type, ...)) WITH ORDINALITY AS m(col, ..., ord)`.
+> Útil para insertar N filas desde un array jsonb preservando el orden del cliente
+> en UNA sentencia (batch atómico). Detectado solo corriendo la RPC contra PG real.
+<!-- tags: postgres, supabase, sql | created: 2026-06-02 -->
