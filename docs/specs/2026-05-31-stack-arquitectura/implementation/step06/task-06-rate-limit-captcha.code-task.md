@@ -1,6 +1,46 @@
-## Status: PENDING
+## Status: DONE
 ## Blocked-By: step05/task-05-report-service-create-api.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-06-02):
+DONE y verificado:
+- Holdout SDD: docs/specs/.../scenarios/report-antispam.scenarios.md (SCEN-001..008).
+- src/lib/rateLimit.ts: checkRateLimit(identifier, limiter?) con Upstash
+  slidingWindow (Redis.fromEnv). max/window configurables (RATE_LIMIT_MAX=5,
+  RATE_LIMIT_WINDOW="10 m") con VALIDACIÓN de window (regex) → un typo cae a
+  default en vez de romper el limiter para siempre. FALLA ABIERTO ante error de
+  .limit() (Redis caído no tumba el endpoint; el captcha sigue amurallando).
+- src/lib/captcha.ts: verifyCaptcha(token, remoteip?) → Cloudflare siteverify.
+  Token trim+cap(2048). FALLA CERRADO (error de red → 403). Sin token → missing
+  sin llamar a siteverify.
+- route.ts: gates en orden rate-limit → captcha (solo anónimos; sesión exenta).
+  clientIp usa el hop de PLATAFORMA (x-vercel-forwarded-for/x-real-ip/trailing
+  XFF) — el primer hop de XFF es falsificable. getSessionRole envuelto en
+  try/catch → degrada a anónimo (muro captcha) si lanza, nunca 500.
+- Tests: vitest 71 (rateLimit + captcha + route). lint/typecheck/build exit 0.
+- Quality gate: 3 agentes (security, edge-case, code-review). code-review APROBÓ.
+  Fixes aplicados: (1) CRÍTICO fail-open permanente por window malformado;
+  (2) IP spoofing por primer hop XFF; (3) getSessionRole sin guard → 500;
+  (4) token captcha sin trim/cap. Todos con tests red-green.
+- Runtime (puerto limpio): anónimo sin header → 403 captcha_required; secreto
+  always-fail → 403 captcha_invalid; XFF multi-hop spoofeado → 403 (IP del
+  trailing hop). El path 429 se prueba por unit (no hay Upstash local).
+
+ACEPTACIÓN:
+- AC1 (E6 rate-limit 429): SATISFECHO (unit con limiter mockeado, árbitro).
+- AC2 (captcha inválido/ausente 403): SATISFECHO + runtime.
+- AC3 (sesión no requiere captcha): SATISFECHO (unit: siteverify NO llamado).
+
+ACCIÓN PENDIENTE DEL USUARIO:
+- Provisionar Upstash Redis (Vercel Marketplace) → UPSTASH_REDIS_REST_URL +
+  UPSTASH_REDIS_REST_TOKEN. Sin ellas el rate-limit FALLA ABIERTO (captcha
+  sigue gateando anónimos).
+- Provisionar Cloudflare Turnstile → TURNSTILE_SECRET_KEY (server) +
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY (widget, paso de UI). Sin TURNSTILE_SECRET_KEY,
+  los envíos anónimos dan 500 (config faltante). Añadirlas a .env.local y Vercel.
+- (Opcional) RATE_LIMIT_MAX / RATE_LIMIT_WINDOW para tunear (default 5 / "10 m").
+-->
 
 # Task: Rate-limit (Upstash) + captcha Turnstile en envíos anónimos
 

@@ -1,3 +1,6 @@
+import { verifyCaptcha } from "@/lib/captcha";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { getSessionRole } from "@/lib/services/authz";
 import {
   CategoryInvalidError,
   createReport,
@@ -5,22 +8,92 @@ import {
 import { validateReportInput } from "@/lib/validation/reportSchema";
 
 /**
- * POST /api/reports — create a report (step05).
+ * POST /api/reports — create a report (step05) behind two anti-spam gates
+ * (step06).
  *
  * Runs on the Node.js runtime (the default for Route Handlers): the write path
  * uses the service-role supabase-js client, which is not Edge-compatible. Do
  * NOT add `export const runtime = "edge"`.
  *
- * Flow: read the optional `Idempotency-Key` header, parse + validate the body
- * (first violation -> 422 with the scenario's Spanish message), then delegate
- * to `createReport`. A fresh report returns 201; an idempotent replay returns
- * 200 with the same `report_id`.
+ * Gates (design §5.2, in ORDER): rate-limit FIRST (by user id if authenticated
+ * else by client IP; fails open), then captcha for ANONYMOUS callers only (a
+ * session is its own proof of humanity; fails closed). Then the step05 flow:
+ * read the optional `Idempotency-Key` header, parse + validate the body (first
+ * violation -> 422 with the scenario's Spanish message), then delegate to
+ * `createReport`. A fresh report returns 201; an idempotent replay returns 200.
  */
 
 /** Max accepted length of an Idempotency-Key (defensive bound). */
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 
+/**
+ * Resolve the client IP for rate-limiting (FIX 2).
+ *
+ * `x-vercel-forwarded-for` / `x-real-ip` are set by the Vercel proxy and are
+ * NOT forwarded from the client, so they are trustworthy. The FIRST hop of
+ * `x-forwarded-for` IS client-controlled (an attacker can rotate it to dodge a
+ * per-IP limit); the proxy appends the real peer as the TRAILING hop, so we key
+ * on that. Falls back to `"unknown"` when no header is present.
+ */
+function clientIp(request: Request): string {
+  const vercel = request.headers.get("x-vercel-forwarded-for");
+  if (vercel) return vercel.split(",")[0]!.trim();
+
+  const real = request.headers.get("x-real-ip");
+  if (real) return real.trim();
+
+  const xff = request.headers.get("x-forwarded-for");
+  return xff?.split(",").pop()?.trim() || "unknown";
+}
+
 export async function POST(request: Request): Promise<Response> {
+  // --- Gate 1: rate-limit (runs FIRST, before any body parsing). ---
+  // Session resolution may throw before any gate (e.g. supabase client
+  // construction); degrade to anonymous (captcha-walled), never 500 (FIX 3).
+  let userId: string | null = null;
+  try {
+    ({ userId } = await getSessionRole());
+  } catch (error) {
+    console.error("session resolution failed; treating as anonymous", {
+      error,
+    });
+  }
+  const ip = clientIp(request);
+  const identifier = userId ? `user:${userId}` : `ip:${ip}`;
+
+  const { allowed } = await checkRateLimit(identifier);
+  if (!allowed) {
+    return Response.json(
+      {
+        error: {
+          code: "rate_limited",
+          message: "Has enviado demasiados reportes. Espera unos minutos.",
+        },
+      },
+      { status: 429 },
+    );
+  }
+
+  // --- Gate 2: captcha (ANONYMOUS callers only; sessions are exempt). ---
+  if (!userId) {
+    const token = request.headers.get("cf-turnstile-response");
+    const cap = await verifyCaptcha(token, ip);
+    if (!cap.ok) {
+      const required = cap.reason === "missing";
+      return Response.json(
+        {
+          error: {
+            code: required ? "captcha_required" : "captcha_invalid",
+            message: required
+              ? "Completa la verificación de seguridad."
+              : "Verificación de seguridad fallida. Recarga e inténtalo de nuevo.",
+          },
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   // A blank or whitespace-only header is "no key": coerce to undefined so it is
   // persisted as NULL (the partial unique index allows many NULLs) and never
   // collides across unrelated requests (SCEN-010).
