@@ -200,3 +200,24 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > Útil para insertar N filas desde un array jsonb preservando el orden del cliente
 > en UNA sentencia (batch atómico). Detectado solo corriendo la RPC contra PG real.
 <!-- tags: postgres, supabase, sql | created: 2026-06-02 -->
+
+### fix-20260602-upstash-window-construction-throw
+> `Ratelimit.slidingWindow(max, window)` parsea el `window` (Duration) en
+> CONSTRUCCIÓN, no en `.limit()`. Un valor que el regex `^\d+\s?(ms|s|m|h|d)$`
+> rechace ("10  m" doble espacio, "10 minutes", "10 M", "10m ") LANZA al construir
+> → si el limiter está en un singleton lazy con fail-open, se desactiva el
+> rate-limit PARA SIEMPRE y solo deja un console.warn por request (indistinguible
+> de un blip transitorio). SIEMPRE validar el window contra el regex y caer a
+> default; floor de max ≥ 1. El fail-open es para outages TRANSITORIOS, no para
+> tapar errores de config. Ver src/lib/rateLimit.ts.
+<!-- tags: upstash, ratelimit, config, security | created: 2026-06-02 -->
+
+### fix-20260602-xff-first-hop-spoofable
+> El PRIMER hop de `x-forwarded-for` lo controla el cliente → keyear el rate-limit
+> por él permite rotarlo y evadir el límite. En Vercel, confiar en el hop de
+> PLATAFORMA: `x-vercel-forwarded-for` / `x-real-ip` (no reenviados desde el
+> cliente) o el ÚLTIMO hop de XFF (el que añade el proxy). `split(",")[0]` es el
+> antipatrón. Sin IP determinable → bucket "unknown" compartido (en Vercel XFF
+> siempre está, así que es inalcanzable en prod; el captcha igual amuralla).
+> Ver clientIp() en src/app/api/reports/route.ts.
+<!-- tags: nextjs, vercel, security, ratelimit | created: 2026-06-02 -->
