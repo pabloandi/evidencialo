@@ -18,8 +18,10 @@
 //   - non-video media        -> 422 (wrong processor).
 //   - already 'processed'     -> 200 idempotent, no re-download (SCEN-004).
 //
-// verify_jwt = false: this is an internal processor keyed by unguessable UUIDs,
-// the same open posture as /api/media (documented in config.toml).
+// verify_jwt = true (config.toml): the gateway rejects unauthenticated requests
+// (401) before this handler runs. supabase-js functions.invoke() auto-attaches
+// the session/anon-key JWT, so the real client needs no extra wiring. Defence in
+// depth on top of the unguessable report_id/media_id UUIDs.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
