@@ -279,3 +279,19 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > deploy`. El container edge-runtime local queda colgado tras `serve` → `docker
 > stop supabase_edge_runtime_<proj>`. Ver supabase/functions/sanitize-video/.
 <!-- tags: supabase, edge-function, deno, ci, security | created: 2026-06-03 -->
+
+### fix-20260603-postgrest-1000-cap
+> Una query PostgREST/supabase-js SIN `.limit()`/`.range()` se TRUNCA en silencio
+> a 1000 filas (max-rows por defecto); `storage.list()` se trunca a 100. En un
+> barrido/cron sobre un conjunto que crece (limpieza de huérfanos) esto deja la
+> cola sin procesar para siempre, sin error — el job reporta 200 y se ve sano.
+> Para trabajo acotado+ordenado+correcto: meter la selección en una RPC SQL
+> (`order by ... limit p_limit`, oldest-first → drena el backlog determinista),
+> paginar `list()` con offset hasta página corta, y un solo `.delete().in(ids)`
+> (cascade) en vez de loop por fila. CRON: gate `CRON_SECRET` fail-closed
+> (`!secret || auth !== 'Bearer '+secret` → 401; Vercel manda el bearer solo) +
+> `export const runtime="nodejs"` + `maxDuration`. Los *.integration.test.ts se
+> auto-saltan sin env → correrlos en db.yml (que ya levanta el stack) con
+> `vitest run integration.test` (substring, NO glob de shell). Ver
+> cleanupService.ts + 0008_orphan_cleanup.sql.
+<!-- tags: supabase, postgrest, cron, vercel, ci, scale | created: 2026-06-03 -->
