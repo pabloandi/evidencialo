@@ -123,3 +123,65 @@ describe("stripMp4Metadata (SCEN-003)", () => {
     expect(() => stripMp4Metadata(garbage)).toThrow();
   });
 });
+
+/**
+ * SCEN-H02 — a pathologically deep-nested mp4 fails cleanly without exhausting
+ * the runtime. A valid box tree that nests `moov` containers far deeper than any
+ * real mp4 must throw a clean "nesting too deep" parse error (so the caller marks
+ * the media terminal 'failed'), NOT a `RangeError: Maximum call stack size
+ * exceeded` from unbounded recursion.
+ */
+describe("stripMp4Metadata depth bound (SCEN-H02)", () => {
+  const HEADER = 8;
+
+  function writeU32(buf: Uint8Array, off: number, v: number): void {
+    buf[off] = (v >>> 24) & 0xff;
+    buf[off + 1] = (v >>> 16) & 0xff;
+    buf[off + 2] = (v >>> 8) & 0xff;
+    buf[off + 3] = v & 0xff;
+  }
+
+  function setType(buf: Uint8Array, off: number, type: string): void {
+    for (let i = 0; i < 4; i++) buf[off + 4 + i] = type.charCodeAt(i);
+  }
+
+  /**
+   * Build `levels` nested `moov` boxes: each box is [size][moov][next-box].
+   * The innermost box is an empty 8-byte `free`. Sizes are filled bottom-up so
+   * the tree is a VALID ISO-BMFF parse (every box fits its parent exactly).
+   */
+  function buildDeepNest(levels: number): Uint8Array {
+    const total = HEADER * (levels + 1); // `levels` moov headers + 1 leaf
+    const buf = new Uint8Array(total);
+    // Innermost leaf at the deepest offset.
+    let off = HEADER * levels;
+    writeU32(buf, off, HEADER);
+    setType(buf, off, "free");
+    // Wrap outward: each moov box spans from its offset to EOF (size = total-off).
+    for (let level = levels - 1; level >= 0; level--) {
+      off = HEADER * level;
+      writeU32(buf, off, total - off);
+      setType(buf, off, "moov");
+    }
+    return buf;
+  }
+
+  it("throws a clean 'nesting too deep' error (not a RangeError)", () => {
+    const deep = buildDeepNest(1000);
+    let thrown: unknown;
+    try {
+      stripMp4Metadata(deep);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(RangeError);
+    expect((thrown as Error).message).toMatch(/nesting too deep/i);
+  });
+
+  it("still strips a normal shallow mp4 (depth bound does not break valid files)", () => {
+    // A 3-level box from the same builder is well under the bound and parses.
+    const shallow = buildDeepNest(3);
+    expect(() => stripMp4Metadata(shallow)).not.toThrow();
+  });
+});

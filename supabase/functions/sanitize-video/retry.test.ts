@@ -44,4 +44,33 @@ describe("withRetry (SCEN-005)", () => {
     await expect(withRetry(fn, { baseDelayMs: 1 })).rejects.toThrow("boom");
     expect(fn).toHaveBeenCalledTimes(3);
   });
+
+  it("shouldRetry=false short-circuits a deterministic error (NOT retried)", async () => {
+    // A not-found is deterministic: retrying with backoff is wasted work. The
+    // predicate lets the caller re-raise it immediately after ONE attempt
+    // (SCEN-H01 — the missing-object download must not burn the retry budget).
+    class NotFound extends Error {}
+    const fn = vi
+      .fn<() => Promise<never>>()
+      .mockRejectedValue(new NotFound("missing"));
+    await expect(
+      withRetry(fn, {
+        attempts: 3,
+        baseDelayMs: 1,
+        shouldRetry: (e) => !(e instanceof NotFound),
+      }),
+    ).rejects.toBeInstanceOf(NotFound);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("shouldRetry=true still retries transient errors normally", async () => {
+    const fn = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce("ok");
+    await expect(
+      withRetry(fn, { attempts: 3, baseDelayMs: 1, shouldRetry: () => true }),
+    ).resolves.toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
 });

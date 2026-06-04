@@ -13,6 +13,13 @@ export interface RetryOptions {
   attempts?: number;
   /** Base backoff in ms; doubles each retry. Default 200. */
   baseDelayMs?: number;
+  /**
+   * Predicate deciding whether a thrown error is worth retrying. Returning
+   * false re-raises immediately (no backoff, no further attempts) — used to
+   * short-circuit DETERMINISTIC faults like a storage not-found, which would
+   * just waste the budget. Defaults to "retry everything".
+   */
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -25,6 +32,7 @@ export async function withRetry<T>(
 ): Promise<T> {
   const attempts = Math.max(1, opts.attempts ?? 3);
   const baseDelayMs = opts.baseDelayMs ?? 200;
+  const shouldRetry = opts.shouldRetry ?? (() => true);
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -32,6 +40,8 @@ export async function withRetry<T>(
       return await fn();
     } catch (error) {
       lastError = error;
+      // Deterministic faults re-raise immediately — no backoff, no more tries.
+      if (!shouldRetry(error)) throw error;
       if (attempt < attempts) {
         await sleep(baseDelayMs * 2 ** (attempt - 1));
       }

@@ -50,6 +50,30 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+/** Deterministic "the raw object isn't there yet" — NOT a transient I/O fault.
+ * Re-raised by withRetry without burning the backoff budget (SCEN-H01). */
+class NotReadyError extends Error {
+  constructor(path: string) {
+    super(`raw object not found at ${path}`);
+    this.name = "NotReadyError";
+  }
+}
+
+/**
+ * True when a Supabase storage download error is a deterministic not-found (the
+ * object was never uploaded / wrong path) rather than a transient network/5xx.
+ * The storage error carries a numeric `status`/`statusCode` (400/404 for a miss)
+ * and/or a "not found"/"Object not found" message; match defensively across the
+ * shapes the storage client has used.
+ */
+function isStorageNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { status?: number; statusCode?: number | string; message?: string };
+  const code = Number(e.status ?? e.statusCode);
+  if (code === 404 || code === 400) return true;
+  return /not[\s_]?found/i.test(e.message ?? "");
+}
+
 /** Best-effort flip to 'failed'. supabase-js resolves { error } (never throws),
  * so inspect the returned error rather than rely on try/catch. */
 async function markFailed(admin: SupabaseClient, id: string): Promise<void> {
@@ -120,20 +144,44 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ state: "processed", idempotent: true }, 200);
   }
 
-  // 5. Download the raw object (transient I/O -> retried).
+  // 5. Download the raw object. Distinguish a DETERMINISTIC not-found (the
+  // client invoked before completing the upload, or a wrong path) from TRUE
+  // transient I/O. A not-found is NOT-READY (mirrors step07's MediaNotReadyError,
+  // SCEN-H01): do NOT retry with backoff, do NOT markFailed (leave 'pending' so a
+  // later retry after the upload completes can still process it), return 409.
+  // Only genuine transient faults go through withRetry -> 503 after exhaustion.
+  // The retried op THROWS a plain Error for transient faults, but for a not-found
+  // it throws a `NotReadyError` that withRetry will re-raise unchanged after a
+  // single attempt (we never re-enter on it because the first attempt already
+  // resolves the deterministic answer).
   let raw: Uint8Array;
   try {
-    const blob = await withRetry(async () => {
-      const { data: dl, error } = await admin.storage
-        .from(BUCKET)
-        .download(row.storage_path);
-      if (error || !dl) {
-        throw new Error(`download failed: ${error?.message ?? "no data"}`);
-      }
-      return dl;
-    });
+    const blob = await withRetry(
+      async () => {
+        const { data: dl, error } = await admin.storage
+          .from(BUCKET)
+          .download(row.storage_path);
+        if (error || !dl) {
+          if (isStorageNotFound(error)) {
+            throw new NotReadyError(row.storage_path);
+          }
+          throw new Error(`download failed: ${error?.message ?? "no data"}`);
+        }
+        return dl;
+      },
+      // A not-found is deterministic — short-circuit, do not back off (SCEN-H01).
+      { shouldRetry: (e) => !(e instanceof NotReadyError) },
+    );
     raw = new Uint8Array(await blob.arrayBuffer());
   } catch (cause) {
+    if (cause instanceof NotReadyError) {
+      // Not-ready: leave 'pending', retryable by the client later (SCEN-H01).
+      console.warn("sanitize-video: raw object not yet available", {
+        id: row.id,
+        path: row.storage_path,
+      });
+      return json({ error: "media_not_ready" }, 409);
+    }
     // Exhausted transient I/O budget -> 'failed' (SCEN-005), respond 503.
     await markFailed(admin, row.id);
     console.error("sanitize-video: download exhausted retries", {
@@ -185,11 +233,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // 8. Mark processed. Guard with the pending filter so a concurrent second
   // writer is a harmless no-op; the step08 trigger then recomputes is_visible.
-  const { error: updError } = await admin
+  // `.select()` returns the AFFECTED rows so we can tell a real transition apart
+  // from a 0-row match (a concurrent writer already set 'processed' or 'failed').
+  // supabase-js returns error===null on a 0-row update, so without this we would
+  // wrongly report 200 on a conflict (FIX C).
+  const { data: updated, error: updError } = await admin
     .from("report_media")
     .update({ processing_state: "processed" })
     .eq("id", row.id)
-    .eq("processing_state", "pending");
+    .eq("processing_state", "pending")
+    .select("processing_state");
   if (updError) {
     // The object is already sanitized; a transient DB update failure is
     // retryable by re-invoking (the idempotent short-circuit then heals it).
@@ -198,6 +251,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
       error: updError.message,
     });
     return json({ error: "state update failed after retries" }, 503);
+  }
+
+  if (!updated || updated.length === 0) {
+    // 0 rows matched: a concurrent writer changed the state under us. Re-read and
+    // reconcile — if it's now 'processed' the outcome we wanted holds (idempotent
+    // 200); otherwise surface the conflict (e.g. a concurrent 'failed') as 409.
+    const { data: cur } = await admin
+      .from("report_media")
+      .select("processing_state")
+      .eq("id", row.id)
+      .maybeSingle();
+    if (cur?.processing_state === "processed") {
+      return json({ state: "processed", idempotent: true }, 200);
+    }
+    return json({ state: cur?.processing_state ?? "unknown", conflict: true }, 409);
   }
 
   return json({ state: "processed", idempotent: false }, 200);

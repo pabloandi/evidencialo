@@ -387,11 +387,14 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
-# sanitize-video (step09): internal video processor. verify_jwt = false — same
-# open posture as /api/media: keyed by unguessable report_id/media_id UUIDs and
-# called server-side with the service-role; not a public, JWT-gated endpoint.
+# sanitize-video (step09): internal video processor. verify_jwt = true — the
+# gateway rejects unauthenticated requests (401) before our handler runs,
+# removing the public-internet surface. This is frictionless for the real client:
+# supabase-js `functions.invoke()` auto-attaches the session/anon-key JWT as the
+# Authorization bearer, so the client needs no extra wiring. Defence in depth on
+# top of the unguessable report_id/media_id UUIDs.
 [functions.sanitize-video]
-verify_jwt = false
+verify_jwt = true
 
 [analytics]
 enabled = true

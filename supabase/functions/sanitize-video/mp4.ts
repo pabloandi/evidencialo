@@ -41,8 +41,15 @@ const CONTAINER_TYPES = new Set([
   "minf",
   "stbl",
   "edts",
-  "udta", // descended only when NOT being stripped (top-level safety; see below)
 ]);
+
+/**
+ * Recursion guard. Real mp4 container nesting is shallow (ftyp/moov/trak/mdia/
+ * minf/stbl is ~6 deep). A crafted file can nest thousands of levels (~8 bytes
+ * each) purely to overflow the call stack and stress the isolate; we throw a
+ * clean parse error well before that (SCEN-H02). 16 leaves generous headroom.
+ */
+const MAX_BOX_DEPTH = 16;
 
 /** Box types that carry the location/PII metadata — retype these to `free`. */
 const STRIP_TYPES = new Set(["udta", "meta"]);
@@ -131,9 +138,14 @@ function retypeToFree(buf: Uint8Array, box: BoxHeader): void {
 
 /**
  * Walk sibling boxes in [start, limit), stripping `udta`/`meta` (retype-to-free)
- * and recursing into known container boxes to reach nested occurrences.
+ * and recursing into known container boxes to reach nested occurrences. `depth`
+ * bounds the recursion so a pathologically deep file fails cleanly instead of
+ * overflowing the call stack (SCEN-H02).
  */
-function walk(buf: Uint8Array, start: number, limit: number): void {
+function walk(buf: Uint8Array, start: number, limit: number, depth = 0): void {
+  if (depth > MAX_BOX_DEPTH) {
+    throw new Error("mp4: box nesting too deep");
+  }
   let off = start;
   while (off < limit) {
     const box = parseBoxHeader(buf, off, limit);
@@ -143,7 +155,7 @@ function walk(buf: Uint8Array, start: number, limit: number): void {
       // Remove PII in place; do NOT recurse into now-free bytes.
       retypeToFree(buf, box);
     } else if (CONTAINER_TYPES.has(box.type)) {
-      walk(buf, box.payloadStart, box.end);
+      walk(buf, box.payloadStart, box.end, depth + 1);
     }
     // Leaf / unknown boxes (e.g. mdat, ftyp, stco) are left byte-for-byte intact.
 

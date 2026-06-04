@@ -9,11 +9,13 @@ on:
     paths:
       - "supabase/migrations/**"
       - "supabase/config.toml"
+      - "supabase/functions/**"
       - ".github/workflows/db.yml"
   pull_request:
     paths:
       - "supabase/migrations/**"
       - "supabase/config.toml"
+      - "supabase/functions/**"
 
 jobs:
   migrations:
@@ -39,5 +41,52 @@ jobs:
             | grep -qx postgis
       # pgTAP RLS suite — encodes scenarios E2/E3/E5 and the §4 policy list.
       - run: pnpm exec supabase test db
+      - if: always()
+        run: pnpm exec supabase stop
+
+  # Edge Function gate (step09 sanitize-video). The Deno handler is excluded from
+  # the Next `tsc` build, so it gets NO type check there; `deno check` type-gates
+  # the privacy module here (resolving its `npm:` + `./` imports). The bash
+  # harness then exercises the integrated state machine (strip/visibility/failure/
+  # not-ready) against a live local stack + the served function.
+  functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: pnpm install --frozen-lockfile
+      # Type-gate the privacy module (resolves npm:@supabase/supabase-js + ./*).
+      - name: deno check (type-gate the Deno handler)
+        run: deno check supabase/functions/sanitize-video/index.ts
+      - run: pnpm exec supabase start
+      # ffmpeg/ffprobe + jq for the harness fixtures and assertions.
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg jq
+      - name: Serve sanitize-video in the background
+        run: |
+          SR="$(pnpm exec supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"$/\1/p')"
+          SUPABASE_SERVICE_ROLE_KEY="$SR" pnpm exec supabase functions serve sanitize-video \
+            > /tmp/sv-serve.log 2>&1 &
+          echo "$!" > /tmp/sv-serve.pid
+          AN="$(pnpm exec supabase status -o env | sed -n 's/^ANON_KEY="\(.*\)"$/\1/p')"
+          for _ in $(seq 1 60); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+              http://127.0.0.1:54321/functions/v1/sanitize-video \
+              -H "Authorization: Bearer $AN" -H 'content-type: application/json' -d '{}' || true)"
+            [ "$code" = "400" ] && break
+            sleep 1
+          done
+      - name: Integration harness (SCEN-001/002/003/004/H01 + verify_jwt)
+        run: bash supabase/functions/sanitize-video/integration.test.sh
+      - if: always()
+        run: kill "$(cat /tmp/sv-serve.pid)" 2>/dev/null || true
       - if: always()
         run: pnpm exec supabase stop

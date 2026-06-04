@@ -25,6 +25,19 @@ DONE y verificado:
   saneado location='' + stream de video intacto + processed + is_visible=true;
   re-invoke idempotente count=1; corrupto → failed + is_visible=false.
 
+HARDENING (quality gate — security + edge-case + code-review):
+- verify_jwt=TRUE (el gateway rechaza no autenticados con 401 antes del handler;
+  el cliente manda la anon key vía functions.invoke — frictionless). E2E: sin
+  bearer → 401.
+- Bound de profundidad de recursión en mp4.ts (un mp4 anidado crafteado lanza
+  error limpio en vez de estresar el isolate) — SCEN-H02.
+- Update final con .select(): 0 filas (writer concurrente puso failed) → 409
+  conflict en vez de mentir 200 — fix del race.
+- Objeto ausente → 409 media_not_ready (sin reintentar, queda pending), espejo de
+  step07 (NotReadyError + predicado shouldRetry en retry.ts) — SCEN-H01.
+- CI: job `functions` en db.yml con `deno check` (type-gate del módulo) + harness
+  de integración bash (integration.test.sh) que corre los escenarios servidos.
+
 ACEPTACIÓN:
 - AC1 (E1 cierre — video processed publica): SATISFECHO (E2E, is_visible=true).
 - AC2 (E10 — falla persistente → failed, nunca visible + registrado): SATISFECHO
