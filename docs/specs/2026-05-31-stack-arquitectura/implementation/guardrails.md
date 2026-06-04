@@ -261,3 +261,21 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > CRÍTICO cuando hay >1 writer (imagen /api/media + video Edge Function step09).
 > Ver public.refresh_report_visibility() en 0007_visibility_trigger.sql.
 <!-- tags: postgres, trigger, concurrency, race | created: 2026-06-03 -->
+
+### fix-20260603-edge-function-deno
+> Supabase Edge Functions corren en DENO, no Node: `import {createClient} from
+> "npm:@supabase/supabase-js@2"` + `Deno.serve`; env `SUPABASE_URL` +
+> `SUPABASE_SERVICE_ROLE_KEY` AUTO-inyectadas (local y plataforma). Local:
+> `supabase functions serve <name>` (el CLI trae su Deno; deno standalone no hace
+> falta). (1) EXCLUIR `supabase/functions` de `tsconfig.json` (tsc del Next muere
+> con `Deno`/`npm:`) — pero entonces esos archivos NO tienen type-check → añadir un
+> job `deno check` en CI (denoland/setup-deno@v2). (2) Lógica portable (typed
+> arrays puros, sin imports Deno/Node) en módulos aparte → testeable en vitest +
+> importable por el handler Deno; ampliar `vitest.config` include a
+> `supabase/functions/**/*.test.ts`. (3) verify_jwt=TRUE: el gateway rechaza no
+> autenticados (401); `supabase.functions.invoke()` manda la anon key sola →
+> frictionless + sin superficie pública. (4) Deploy vía MCP `deploy_edge_function`
+> (pasar TODOS los files: index + módulos + deno.json) o `supabase functions
+> deploy`. El container edge-runtime local queda colgado tras `serve` → `docker
+> stop supabase_edge_runtime_<proj>`. Ver supabase/functions/sanitize-video/.
+<!-- tags: supabase, edge-function, deno, ci, security | created: 2026-06-03 -->
