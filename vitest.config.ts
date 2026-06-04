@@ -11,6 +11,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // src/** holds app/service tests; supabase/functions/** holds the PORTABLE
+    // Edge-function modules (mp4.ts, retry.ts) — plain TS, vitest-runnable. The
+    // Deno handler (index.ts) has no .test.ts and is verified via serve instead.
+    include: ["src/**/*.test.ts", "supabase/functions/**/*.test.ts"],
   },
 });

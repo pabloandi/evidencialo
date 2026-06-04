@@ -1,6 +1,44 @@
-## Status: PENDING
+## Status: DONE
 ## Blocked-By: step08/task-08-visibility-trigger.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-06-03):
+DONE y verificado:
+- Holdout SDD: docs/specs/.../scenarios/video-sanitize.scenarios.md (SCEN-001..005).
+- supabase/functions/sanitize-video/: index.ts (Deno.serve, service-role) +
+  mp4.ts (stripMp4Metadata portable) + retry.ts (withRetry backoff) + tests vitest.
+- Saneo: reescritor de cajas ISO-BMFF que RE-TIPA a `free` (size-preserving) las
+  cajas moov/udta y moov/meta (donde vive el GPS ©xyz). NO transcodifica, NO mueve
+  mdat → offsets stco/co64 intactos → video reproducible, metadata fuera. ffmpeg
+  NO está en el runtime Edge; el box-rewrite en Deno puro cabe en los límites.
+- Máquina de estados (reusa taxonomía step07): parse/corrupto → failed TERMINAL
+  (422); I/O transitoria → withRetry(3, backoff) → failed (503) al agotar; ya
+  processed → 200 idempotente. Marca processed/failed; el trigger step08 publica.
+- config.toml [functions.sanitize-video] verify_jwt=false (procesador interno por
+  UUID, mismo posture que /api/media). tsconfig excluye supabase/functions de tsc;
+  vitest.config incluye supabase/functions/**/*.test.ts. mediaService.ts SIN tocar
+  (el cliente invoca la función directo; procesadores independientes).
+- Tests: vitest 110 (mp4 4 con ffmpeg/ffprobe reales + retry 4). pgTAP 29 (sin
+  regresión). lint/typecheck/build exit 0.
+- E2E (función servida + Storage/DB local): mp4 con location=+40/-074 → objeto
+  saneado location='' + stream de video intacto + processed + is_visible=true;
+  re-invoke idempotente count=1; corrupto → failed + is_visible=false.
+
+ACEPTACIÓN:
+- AC1 (E1 cierre — video processed publica): SATISFECHO (E2E, is_visible=true).
+- AC2 (E10 — falla persistente → failed, nunca visible + registrado): SATISFECHO
+  (E2E corrupto → failed/invisible/422 logueado).
+- AC3 (saneo elimina metadatos): SATISFECHO + probado con ffprobe sobre el objeto
+  REAL almacenado (no vacuo: el input tenía location).
+
+NOTA: el lock de concurrencia del trigger step08 ya cubre a este SEGUNDO writer
+de processing_state (imagen /api/media + video).
+
+ACCIÓN PENDIENTE DEL USUARIO:
+- (Hecho por mí vía MCP) Deploy al remoto: la función no necesita secrets extra
+  (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY auto-inyectadas).
+-->
 
 # Task: Video — URL firmada + Edge Function de saneado (backoff, failed)
 

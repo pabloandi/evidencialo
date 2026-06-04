@@ -387,6 +387,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# sanitize-video (step09): internal video processor. verify_jwt = false — same
+# open posture as /api/media: keyed by unguessable report_id/media_id UUIDs and
+# called server-side with the service-role; not a public, JWT-gated endpoint.
+[functions.sanitize-video]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
