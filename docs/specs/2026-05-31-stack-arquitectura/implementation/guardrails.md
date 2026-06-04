@@ -246,3 +246,18 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > retornado. Patrón a reusar en el Edge Function de video (step09). Ver
 > src/lib/services/mediaService.ts.
 <!-- tags: supabase, media, error-handling, reliability | created: 2026-06-02 -->
+
+### fix-20260603-recompute-trigger-race
+> Un trigger que RECOMPUTA un agregado desde un conjunto de filas (p.ej.
+> reports.is_visible desde el set de report_media) tiene una race bajo READ
+> COMMITTED: dos writers que actualizan filas DISTINTAS del mismo grupo casi
+> simultáneamente NO ven el cambio aún-no-commiteado del otro en su snapshot, así
+> que ambos calculan el agregado viejo → resultado perdido (p.ej. reporte stranded
+> invisible para siempre). El guard de "misma fila" (`.eq(state,'pending')`) NO
+> ayuda — son filas distintas. Fix: tomar `for no key update` sobre la fila PADRE
+> al inicio del trigger → serializa los recomputes del mismo grupo (el 2º bloquea
+> hasta que el 1º commitea, luego re-lee el estado commiteado). pgTAP NO detecta
+> esto (corre en una sola transacción) — probar con harness de 2 conexiones psql.
+> CRÍTICO cuando hay >1 writer (imagen /api/media + video Edge Function step09).
+> Ver public.refresh_report_visibility() en 0007_visibility_trigger.sql.
+<!-- tags: postgres, trigger, concurrency, race | created: 2026-06-03 -->
