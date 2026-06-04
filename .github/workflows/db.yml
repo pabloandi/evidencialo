@@ -41,6 +41,19 @@ jobs:
             | grep -qx postgis
       # pgTAP RLS suite — encodes scenarios E2/E3/E5 and the §4 policy list.
       - run: pnpm exec supabase test db
+      # Integration arbiters (reportService / mediaService / cleanupService) are
+      # the real SCEN gate for the write + cleanup paths. They self-skip without
+      # env, so they NEVER run in unit CI — wire them to the live local stack here
+      # so they actually execute (the cleanupService arbiter covers the 0008
+      # find_orphan_reports RPC: bounded/oldest-first sweep + zero-media + EXIF
+      # strip from the others). Env comes from `supabase status -o json`.
+      - name: Integration tests against the local stack (SCEN arbiters)
+        run: |
+          STATUS="$(pnpm exec supabase status -o json)"
+          NEXT_PUBLIC_SUPABASE_URL="$(echo "$STATUS" | jq -r '.API_URL')" \
+          NEXT_PUBLIC_SUPABASE_ANON_KEY="$(echo "$STATUS" | jq -r '.ANON_KEY')" \
+          SUPABASE_SERVICE_ROLE_KEY="$(echo "$STATUS" | jq -r '.SERVICE_ROLE_KEY')" \
+          pnpm exec vitest run integration.test
       - if: always()
         run: pnpm exec supabase stop
 

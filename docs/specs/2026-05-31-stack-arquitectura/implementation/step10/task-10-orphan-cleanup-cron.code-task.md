@@ -1,6 +1,43 @@
-## Status: PENDING
+## Status: DONE
 ## Blocked-By: step09/task-09-video-sanitize-edge-function.code-task.md
 ## Completed:
+
+<!--
+PROGRESO (2026-06-03):
+DONE y verificado:
+- Holdout SDD: orphan-cleanup.scenarios.md (SCEN-001..005) +
+  orphan-cleanup-hardening.scenarios.md (SCEN-H01 bounded/oldest-first, H02 zero-media).
+- src/lib/services/cleanupService.ts: cleanupOrphans({now,cutoffHours=24,batchLimit=200},
+  client?) → llama la RPC find_orphan_reports (acotada + oldest-first), pagina
+  storage.list, borra objetos (concurrencia acotada) + batch delete .in(ids)
+  (cascade), devuelve {deletedReportIds, storageResidueReportIds}. Reloj inyectable.
+- src/app/api/cron/cleanup/route.ts: gate CRON_SECRET (fail-closed 401), runtime
+  nodejs + maxDuration 60, responde {deleted, storageResidue}.
+- Migración 0008_orphan_cleanup.sql: índice parcial report_media_pending_idx +
+  find_orphan_reports(timestamptz,int) SECURITY DEFINER (search_path='', execute
+  solo a service_role). Selecciona invisible + >cutoff + (pending media O sin media);
+  failed-only se conserva.
+- vercel.json: cron ya declarado (/api/cron/cleanup, 0 3 * * *).
+- CI: db.yml ahora corre los *.integration.test.ts (arbiters de steps 05-10) contra
+  el stack local — antes se auto-saltaban en CI.
+- Tests: vitest 125. pgTAP 29 (sin regresión). Integración (DB+Storage real) cubre
+  SCEN-001..004 + H01 (drain ordenado) + H02 (zero-media). lint/typecheck/build 0.
+- Aplicado al remoto (0008) + advisor.
+- Quality gate: security limpio (borrado catastrófico por IN-vacío doblemente
+  defendido + auth fail-closed), code-review aprobó. Fixes edge/perf: CRÍTICO cap
+  silencioso de 1000 filas / loop sin cota → RPC acotada+ordenada + batch delete;
+  paginación de storage.list (>100 objetos); zero-media arm; índice parcial;
+  residue observability; runtime/maxDuration explícitos; integración en CI.
+
+ACEPTACIÓN:
+- AC1 (E9 — huérfano >24h se limpia + objetos Storage): SATISFECHO (integración).
+- AC2 (no borra recientes): SATISFECHO (SCEN-002).
+- AC3 (no toca visibles): SATISFECHO (SCEN-003).
+
+ACCIÓN PENDIENTE DEL USUARIO:
+- Setear CRON_SECRET en Vercel env (Vercel manda el bearer solo). Sin ella el
+  endpoint cae a 401 (fail-closed).
+-->
 
 # Task: Cron de limpieza de reportes huérfanos
 
