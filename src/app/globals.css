@@ -1,1 +1,248 @@
 @import "tailwindcss";
+
+/*
+ * Design tokens — civic clarity, mobile-first (step11).
+ * Colors and fonts are exposed as CSS vars so both Tailwind utilities and the
+ * hand-written map chrome read from one source of truth.
+ */
+:root {
+  --color-ink: #13171a;
+  --color-paper: #f7f6f2;
+  --color-accent: #e8590c;
+
+  --cat-bache: #e8590c;
+  --cat-basura: #2f9e44;
+  --cat-alumbrado: #1971c2;
+  --cat-fallback: #868e96;
+
+  /* `--font-display` / `--font-body` are injected by next/font on <body>. */
+  --font-display-stack: var(--font-display), system-ui, sans-serif;
+  --font-body-stack: var(--font-body), system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-paper: var(--color-paper);
+  --color-accent: var(--color-accent);
+  --font-display: var(--font-display-stack);
+  --font-body: var(--font-body-stack);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-body-stack);
+  color: var(--color-ink);
+  background: var(--color-paper);
+}
+
+/* ---- Full-screen map shell ------------------------------------------------ */
+.public-map-shell,
+.map-root,
+.map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.map-root {
+  overflow: hidden;
+}
+
+/* ---- Top header (translucent, blurred) ------------------------------------ */
+.map-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--color-paper) 78%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+
+.map-header__brand {
+  margin: 0;
+  font-family: var(--font-display-stack);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+
+.map-header__tagline {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+/* ---- Legend (bottom-left card desktop / bottom sheet mobile) --------------- */
+.map-legend {
+  position: absolute;
+  z-index: 10;
+  bottom: 1rem;
+  left: 1rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--color-paper) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--color-ink) 14%, transparent);
+}
+
+.map-legend__title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display-stack);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+.map-legend__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.map-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.map-legend__dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-ink) 12%, transparent);
+}
+
+@media (max-width: 640px) {
+  .map-legend {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 1rem 1rem 0 0;
+    padding-bottom: max(0.875rem, env(safe-area-inset-bottom));
+  }
+
+  .map-legend__list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+  }
+}
+
+/* ---- Truncation hint pill (SCEN-F04) -------------------------------------- */
+.map-hint {
+  position: absolute;
+  z-index: 11;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.4375rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* ---- Quiet error toast ---------------------------------------------------- */
+.map-toast {
+  position: absolute;
+  z-index: 11;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-paper);
+  background: var(--color-ink);
+}
+
+/* ---- Click popup card ----------------------------------------------------- */
+.map-popup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-family: var(--font-body-stack);
+}
+
+.map-popup__chip {
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.map-popup__status {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.map-popup__date {
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+}
+
+/* ---- Missing-key fallback (SCEN-F03) -------------------------------------- */
+.map-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--color-paper);
+}
+
+.map-fallback__card {
+  max-width: 28rem;
+  text-align: center;
+}
+
+.map-fallback__brand {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display-stack);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--color-accent);
+}
+
+.map-fallback__title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display-stack);
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: var(--color-ink);
+}
+
+.map-fallback__body {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--color-ink) 75%, transparent);
+}
