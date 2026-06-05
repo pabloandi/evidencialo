@@ -295,3 +295,32 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > `vitest run integration.test` (substring, NO glob de shell). Ver
 > cleanupService.ts + 0008_orphan_cleanup.sql.
 <!-- tags: supabase, postgrest, cron, vercel, ci, scale | created: 2026-06-03 -->
+
+### fix-20260604-bbox-geography-index-and-shared-db-tests
+> (1) ÍNDICE GEOGRAPHY: una columna `geography` con índice GIST SÓLO usa el índice
+> si el operando del `&&` también es geography. El primer corte comparó
+> `location` (geography) contra una ENVELOPE de geometría
+> (`ST_SetSRID(ST_MakeBox2D(...))`) → fuerza `location::geometry` y MATA el índice
+> (seq scan, justo lo que el bbox existe para evitar). Correcto:
+> `r.location operator(extensions.&&) ST_MakeEnvelope(min_lng,min_lat,max_lng,max_lat,4326)::extensions.geography`.
+> Probarlo de verdad: pgTAP con `set local enable_seqscan=off` + `EXPLAIN (format
+> text)` capturado a texto y `like '%<index_name>%'` / `not like '%Seq Scan%'` (el
+> build de pgTAP local trae sólo el operador SQL `like`, no las funciones
+> `like()`/`matches()` → asertar con `ok()` sobre el booleano). (2) LÍMITE DE
+> SEGURIDAD EN LA DB, no sólo en HTTP: el anon key puede llamar la RPC directo,
+> saltándose el parseBbox del route → las invariantes de bbox (rango, min<max,
+> área ≤5°) van DENTRO de la función (`raise exception`), con el 400 de parseBbox
+> como primera línea rápida. (3) TRUNCAMIENTO DETERMINISTA: pedir `p_limit = cap+1`
+> (una fila centinela) detecta overflow sin segunda query; `order by created_at
+> desc, id` + `slice(0,cap)` → newest-first estable + flag `truncated`; el route
+> lo señala con header `X-Result-Truncated: true`, el body sigue siendo el array
+> puro de markers. (4) TESTS DE INTEGRACIÓN SOBRE DB LOCAL COMPARTIDO: vitest corre
+> los *.integration.test.ts FILES en WORKERS PARALELOS contra la MISMA DB local.
+> Una aserción de IGUALDAD EXACTA acotada (top-N bajo `cap`) es frágil: cualquier
+> fila visible que OTRO archivo siembre en el mismo recuadro roba un slot y rompe
+> el orden → pasa aislada, falla en conjunto (lo atrapa el re-run de estabilidad,
+> nunca un solo pase). Fix: aislar geográficamente ese test (un bbox que ningún
+> otro fixture toca; toda la app es Bogotá -74/4.6 → usar 100/50), o asertar por
+> pertenencia (`toContain`) en vez de igualdad exacta. Ver reports_in_view en
+> 0009_reports_in_view.sql + listInBbox/geo.ts + reportService.integration.test.ts.
+<!-- tags: postgis, geography, gist, index, security, test-isolation, vitest | created: 2026-06-04 -->

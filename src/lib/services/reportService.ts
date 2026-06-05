@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Bbox } from "@/lib/geo";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import { createReadSupabase } from "@/lib/supabase/read";
 import type {
   ValidMediaInput,
   ValidReportInput,
@@ -158,4 +160,64 @@ export async function createReport(
     media,
     idempotent: result.idempotent,
   };
+}
+
+/**
+ * One public report marker as returned to the open map (step11).
+ *
+ * PUBLIC FIELDS ONLY. `reporter_id` and the precise street `address` are PII and
+ * are NEVER exposed here — the shape is pinned to the `reports_in_view` RETURNS
+ * TABLE columns (public-map-bbox.scenarios.md, SCEN-004). Coordinates are public
+ * by nature of a map pin.
+ */
+export type ReportMarker = {
+  id: string;
+  lng: number;
+  lat: number;
+  category: string;
+  status: string;
+  created_at: string;
+};
+
+/** Default cap on rows returned per bbox read (overridable per call/test). */
+export const DEFAULT_BBOX_CAP = 2000;
+
+/**
+ * Read the visible reports inside a bounding box for the public map (step11).
+ *
+ * Delegates to the SECURITY DEFINER `reports_in_view` RPC, which uses the GIST
+ * index, orders `created_at desc, id`, and returns ONLY `is_visible=true` rows
+ * with public fields. This is a public, cacheable read, so it uses the stateless
+ * ANON read client by default (no cookies, no session); the client is injectable
+ * for testing. The caller MUST have validated the bbox (see `parseBbox`) before
+ * calling — this function passes the four floats straight to PostGIS.
+ *
+ * A dense viewport is truncated DETERMINISTICALLY: the RPC is asked for
+ * `p_limit = cap + 1` (one sentinel row beyond the cap) so overflow is detected
+ * without a second query. When more than `cap` rows match, the extra row is
+ * dropped and `truncated` is `true` so the caller can signal the loss instead of
+ * dropping rows silently (public-map-bbox-hardening.scenarios.md SCEN-H03).
+ */
+export async function listInBbox(
+  bbox: Bbox,
+  client: SupabaseClient = createReadSupabase(),
+  cap: number = DEFAULT_BBOX_CAP,
+): Promise<{ markers: ReportMarker[]; truncated: boolean }> {
+  const { data, error } = await client.rpc("reports_in_view", {
+    min_lng: bbox.minLng,
+    min_lat: bbox.minLat,
+    max_lng: bbox.maxLng,
+    max_lat: bbox.maxLat,
+    p_limit: cap + 1,
+  });
+
+  if (error) {
+    throw new Error(`reports_in_view RPC failed: ${error.message}`);
+  }
+
+  const rows = data ?? [];
+  const truncated = rows.length > cap;
+  const markers = (truncated ? rows.slice(0, cap) : rows) as ReportMarker[];
+
+  return { markers, truncated };
 }

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // are mocked so the route's ORDER and branch logic is the unit under test.
 
 const createReportMock = vi.fn();
+const listInBboxMock = vi.fn();
 const getSessionRoleMock = vi.fn();
 const checkRateLimitMock = vi.fn();
 const verifyCaptchaMock = vi.fn();
@@ -18,6 +19,7 @@ vi.mock("@/lib/services/reportService", async () => {
   return {
     ...actual,
     createReport: (...args: unknown[]) => createReportMock(...args),
+    listInBbox: (...args: unknown[]) => listInBboxMock(...args),
   };
 });
 
@@ -34,7 +36,7 @@ vi.mock("@/lib/captcha", () => ({
 }));
 
 import { CategoryInvalidError } from "@/lib/services/reportService";
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const baseline = {
   category: "bache",
@@ -72,6 +74,7 @@ function mockCreateSuccess() {
 
 beforeEach(() => {
   createReportMock.mockReset();
+  listInBboxMock.mockReset();
   getSessionRoleMock.mockReset();
   checkRateLimitMock.mockReset();
   verifyCaptchaMock.mockReset();
@@ -457,5 +460,172 @@ describe("POST /api/reports — create path (step05)", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe("internal_error");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/reports?bbox=... — the public map read (step11).
+// public-map-bbox.scenarios.md SCEN-003 (malformed/oversized -> 400) and
+// SCEN-004 (public fields only — no reporter_id). listInBbox is mocked so the
+// route's parsing + mapping is the unit under test; the DB-level SCEN-001/002
+// arbiter is the integration test. The POST anti-spam gates must NOT run on GET.
+// ---------------------------------------------------------------------------
+function getRequest(query: string) {
+  return new Request(`http://localhost/api/reports${query}`, { method: "GET" });
+}
+
+describe("GET /api/reports — public map bbox read (step11)", () => {
+  it("returns 400 bbox_invalid for a malformed bbox (3 numbers) — SCEN-003", async () => {
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06"));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: { code: "bbox_invalid", message: "Parámetro bbox inválido." },
+    });
+    expect(listInBboxMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 bbox_invalid when the bbox param is missing — SCEN-003", async () => {
+    const res = await GET(getRequest(""));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe("bbox_invalid");
+    expect(listInBboxMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 bbox_invalid for a non-numeric component — SCEN-003", async () => {
+    const res = await GET(getRequest("?bbox=-74.10,abc,-74.06,4.62"));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe("bbox_invalid");
+    expect(listInBboxMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 bbox_too_large for a whole-world bbox — SCEN-003", async () => {
+    const res = await GET(getRequest("?bbox=-180,-90,180,90"));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe("bbox_too_large");
+    expect(listInBboxMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 with the public marker shape and NO reporter_id — SCEN-004", async () => {
+    listInBboxMock.mockResolvedValue({
+      markers: [
+        {
+          id: "rep-A",
+          lng: -74.08,
+          lat: 4.61,
+          category: "bache",
+          status: "nuevo",
+          created_at: "2026-06-03T00:00:00Z",
+        },
+      ],
+      truncated: false,
+    });
+
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "rep-A",
+        lng: -74.08,
+        lat: 4.61,
+        category: "bache",
+        status: "nuevo",
+        created_at: "2026-06-03T00:00:00Z",
+      },
+    ]);
+    // Public set only — PII keys are absent from every item.
+    expect(body[0]).not.toHaveProperty("reporter_id");
+    expect(body[0]).not.toHaveProperty("address");
+    // The parsed bbox was forwarded to the service.
+    expect(listInBboxMock).toHaveBeenCalledWith({
+      minLng: -74.1,
+      minLat: 4.6,
+      maxLng: -74.06,
+      maxLat: 4.62,
+    });
+  });
+
+  it("returns an empty array when no visible reports are in the box", async () => {
+    listInBboxMock.mockResolvedValue({ markers: [], truncated: false });
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([]);
+  });
+
+  it("signals truncation via X-Result-Truncated when the result was capped — SCEN-H03", async () => {
+    listInBboxMock.mockResolvedValue({
+      markers: [
+        {
+          id: "rep-A",
+          lng: -74.08,
+          lat: 4.61,
+          category: "bache",
+          status: "nuevo",
+          created_at: "2026-06-03T00:00:00Z",
+        },
+      ],
+      truncated: true,
+    });
+
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Result-Truncated")).toBe("true");
+    // The body stays the bare markers array — truncation is header-only.
+    const body = await res.json();
+    expect(body).toEqual([
+      {
+        id: "rep-A",
+        lng: -74.08,
+        lat: 4.61,
+        category: "bache",
+        status: "nuevo",
+        created_at: "2026-06-03T00:00:00Z",
+      },
+    ]);
+  });
+
+  it("omits the X-Result-Truncated header when the result was NOT capped — SCEN-H03", async () => {
+    listInBboxMock.mockResolvedValue({
+      markers: [
+        {
+          id: "rep-A",
+          lng: -74.08,
+          lat: 4.61,
+          category: "bache",
+          status: "nuevo",
+          created_at: "2026-06-03T00:00:00Z",
+        },
+      ],
+      truncated: false,
+    });
+
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Result-Truncated")).toBeNull();
+  });
+
+  it("does NOT run the POST anti-spam gates on a GET", async () => {
+    listInBboxMock.mockResolvedValue({ markers: [], truncated: false });
+    await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(checkRateLimitMock).not.toHaveBeenCalled();
+    expect(verifyCaptchaMock).not.toHaveBeenCalled();
+    expect(getSessionRoleMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when the read service throws unexpectedly", async () => {
+    listInBboxMock.mockRejectedValue(new Error("db is on fire"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe("internal_error");
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

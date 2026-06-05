@@ -1,9 +1,11 @@
 import { verifyCaptcha } from "@/lib/captcha";
+import { parseBbox } from "@/lib/geo";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { getSessionRole } from "@/lib/services/authz";
 import {
   CategoryInvalidError,
   createReport,
+  listInBbox,
 } from "@/lib/services/reportService";
 import { validateReportInput } from "@/lib/validation/reportSchema";
 
@@ -168,6 +170,48 @@ export async function POST(request: Request): Promise<Response> {
         error: {
           code: "internal_error",
           message: "No se pudo crear el reporte. Inténtalo de nuevo.",
+        },
+      },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET /api/reports?bbox=minLng,minLat,maxLng,maxLat — the public map read
+ * (step11, public-map-bbox.scenarios.md).
+ *
+ * A PUBLIC, cacheable read with NO auth and NO anti-spam gates — those belong to
+ * the write path (POST) only and must never run here. The untrusted `bbox` is
+ * validated by `parseBbox` BEFORE any DB call: a malformed or over-large box is
+ * a structured 400 with no scan (SCEN-003). A valid box delegates to
+ * `listInBbox`, whose SECURITY DEFINER RPC returns ONLY visible reports with
+ * PUBLIC fields — `reporter_id` and the precise `address` are never exposed
+ * (SCEN-004). A dense viewport is truncated to the newest rows; when that
+ * happens the response carries `X-Result-Truncated: true` so the loss is
+ * signaled rather than silent (SCEN-H03) — the body stays the bare marker
+ * array. Runs on the Node.js runtime (the supabase-js client is not
+ * Edge-compatible); do NOT add `export const runtime = "edge"`.
+ */
+export async function GET(request: Request): Promise<Response> {
+  const bbox = parseBbox(new URL(request.url).searchParams.get("bbox"));
+  if (!bbox.ok) {
+    return Response.json({ error: bbox.error }, { status: 400 });
+  }
+
+  try {
+    const { markers, truncated } = await listInBbox(bbox.value);
+    return Response.json(markers, {
+      status: 200,
+      headers: truncated ? { "X-Result-Truncated": "true" } : undefined,
+    });
+  } catch (error) {
+    console.error("GET /api/reports failed", { error });
+    return Response.json(
+      {
+        error: {
+          code: "internal_error",
+          message: "No se pudieron cargar los reportes. Inténtalo de nuevo.",
         },
       },
       { status: 500 },
