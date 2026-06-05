@@ -18,7 +18,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set local search_path = extensions, public;
 
-select plan(16);
+select plan(17);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures. Box under test: lng [-74.10,-74.06], lat [4.60,4.62].
@@ -125,6 +125,17 @@ select ok(
     'EXECUTE'
   ),
   'grant: anon can EXECUTE reports_in_view'
+);
+
+-- Security context: the function is SECURITY INVOKER (0010 hardening), so an
+-- anon caller runs under RLS, not the owner's privileges. A regression back to
+-- DEFINER (the linter-flagged form) must fail here. `prosecdef = false` = INVOKER.
+select ok(
+  not (select p.prosecdef
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'reports_in_view'),
+  'security: reports_in_view is SECURITY INVOKER (not DEFINER)'
 );
 
 -- ===========================================================================

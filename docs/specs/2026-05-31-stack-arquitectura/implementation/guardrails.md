@@ -324,3 +324,23 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > pertenencia (`toContain`) en vez de igualdad exacta. Ver reports_in_view en
 > 0009_reports_in_view.sql + listInBbox/geo.ts + reportService.integration.test.ts.
 <!-- tags: postgis, geography, gist, index, security, test-isolation, vitest | created: 2026-06-04 -->
+
+### fix-20260604-anon-definer-prefer-invoker
+> Una función `SECURITY DEFINER` grantada a `anon`/`authenticated` y expuesta en
+> el schema `public` (callable vía `/rest/v1/rpc/<fn>`) dispara los lints
+> 0028/0029 (`anon|authenticated_security_definer_function_executable`): corre con
+> privilegios del OWNER y BYPASSEA RLS, así que el contrato depende SOLO del cuerpo.
+> Por eso 0006/0007/0008 NO los dispararon (create_report→authenticated sin anon;
+> refresh_report_visibility es trigger, no callable; find_orphan_reports→service_role
+> solo) y reports_in_view (step11, primer DEFINER anon-callable) SÍ. Regla: si la
+> RLS ya codifica el contrato (aquí `reports_select_public USING (is_visible=true)`
+> + `categories_select_all USING (true)`), usar `SECURITY INVOKER` — devuelve las
+> MISMAS filas y AÑADE la capa RLS encima del predicado explícito (anon pasa RLS
+> *y* `is_visible=true`, no el cuerpo solo). Mantener el predicado explícito de
+> todas formas: hace el contrato role-independent para callers exentos de RLS
+> (pgTAP corre superuser; integración usa service_role — ambos bypassean RLS, el
+> predicado filtra). Verificar el camino REAL anon, no solo los tests con
+> service_role: `set local role anon; select reports_in_view(...)` debe ver el
+> visible y excluir el invisible. Anclar el contrato en pgTAP (`not prosecdef`).
+> get_advisors security pasó de 2 WARN a 0. Ver 0010_reports_in_view_invoker.sql.
+<!-- tags: supabase, security-definer, invoker, rls, linter, anon | created: 2026-06-04 -->
