@@ -29,7 +29,7 @@ set local search_path = extensions, public;
 
 grant execute on all functions in schema extensions to anon, authenticated;
 
-select plan(17);
+select plan(19);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as superuser; bypasses RLS)
@@ -199,6 +199,21 @@ select throws_ok(
   'SCEN-006: an unknown report id raises not-found (P0002)');
 
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- Grants: authenticated may EXECUTE; anon may NOT (Supabase default privileges
+-- grant public functions to anon, so anon is revoked BY NAME in 0011). A
+-- regression that re-grants anon must fail here.
+-- ---------------------------------------------------------------------------
+select ok(
+  has_function_privilege('authenticated',
+    'public.change_report_status(uuid, public.report_status, text)', 'EXECUTE'),
+  'grant: authenticated can EXECUTE change_report_status');
+
+select ok(
+  not has_function_privilege('anon',
+    'public.change_report_status(uuid, public.report_status, text)', 'EXECUTE'),
+  'grant: anon CANNOT EXECUTE change_report_status');
 
 select * from finish();
 rollback;

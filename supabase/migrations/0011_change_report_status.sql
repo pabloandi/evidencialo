@@ -88,5 +88,9 @@ $$;
 
 -- Only authenticated callers may invoke it; anon never can. The internal
 -- `private.is_staff()` gate further restricts the effect to staff/admin.
-revoke execute on function public.change_report_status(uuid, public.report_status, text) from public;
+-- NOTE: Supabase's default privileges explicitly grant EXECUTE on public
+-- functions to anon/authenticated/service_role, so `revoke ... from public` is
+-- NOT enough — anon must be revoked by name (otherwise linter 0028 fires and an
+-- anon could reach the function, only to be stopped by the is_staff() gate).
+revoke execute on function public.change_report_status(uuid, public.report_status, text) from public, anon;
 grant execute on function public.change_report_status(uuid, public.report_status, text) to authenticated;
