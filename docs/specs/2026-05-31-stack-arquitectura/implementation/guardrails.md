@@ -393,3 +393,35 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > la signed URL sale como `/storage/v1/object/sign/...?token=...` 200; 404s vía
 > `curl -o /dev/null -w "%{http_code}"`. Ver reportDetailService.ts + (public)/reportes/[id]/page.tsx.
 <!-- tags: nextjs, rsc, supabase, signed-urls, private-bucket, caching, react-cache, security | created: 2026-06-05 -->
+
+### fix-20260605-staff-status-change-definer-and-anon-grant
+> Cambio de estado auditado del panel (step13): una RPC `SECURITY DEFINER`
+> (`change_report_status`) garantiza que UPDATE reports + INSERT
+> report_status_history se escriban en UNA transacción (estado nunca cambia sin
+> auditoría) con `private.is_staff()` como primer statement (gate authz en la DB,
+> no solo el route). DEFINER es NECESARIO aquí (a diferencia de reports_in_view
+> step11, que pasó a INVOKER): un write auditado bajo privilegio no puede ser
+> INVOKER sin perder la atomicidad bajo RLS. `changed_by = (select auth.uid())`
+> (server-derived, no forjable). No-op guard: `if v_from = p_to_status then return`
+> ANTES de escribir — el select del control default-ea al estado actual, así que
+> "Guardar" sin cambiar es un no-op trivial que escribiría una fila basura
+> (from==to) y re-estamparía resolved_at; el guard lo hace inerte (lo atrapó el
+> edge-case-detector, no los tests). (1) TRAMPA DE GRANT: Supabase tiene DEFAULT
+> PRIVILEGES que otorgan EXECUTE en funciones de `public` a anon/authenticated/
+> service_role POR NOMBRE → `revoke ... from public` NO quita el grant a anon
+> (dispara el advisor 0028). Revocar explícito: `revoke execute ... from public,
+> anon`. Verificar con `has_function_privilege('anon', ...)` en pgTAP. El 0029
+> (authenticated ejecuta DEFINER) queda como aceptación documentada. (2) QA RUNTIME
+> DE UN PANEL AUTENTICADO SIN UI DE LOGIN: step04 hizo el GATE (layout redirect) pero
+> NO una página de login → un staff no puede iniciar sesión en la app (gap real,
+> flag al usuario). Para el QA: crear usuario vía GoTrue admin
+> (`POST /auth/v1/admin/users` con service key, email_confirm:true) → `update
+> profiles set role='staff'` → sign-in (`/auth/v1/token?grant_type=password`) →
+> generar la cookie EXACTA de @supabase/ssr con `createServerClient` + cookie-jar en
+> memoria + `setSession({access_token, refresh_token})` (en Node<22 stubear
+> `globalThis.WebSocket` antes, supabase-js instancia RealtimeClient eager) → la
+> cookie sale `sb-127-auth-token` → inyectar con `agent-browser cookies set` →
+> cargar /panel. Árbitro más fuerte que pgTAP: llamar la RPC vía PostgREST
+> (`/rest/v1/rpc/<fn>` con `Authorization: Bearer <jwt real>`) prueba E3/E4/E7 con
+> auth real, no claims simulados. Ver 0011 + statusService + (panel)/panel/page.tsx.
+<!-- tags: supabase, security-definer, anon-grant, advisor, authz, audit, agent-browser, session, runtime-qa | created: 2026-06-05 -->
