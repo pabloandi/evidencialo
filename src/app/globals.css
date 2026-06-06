@@ -345,3 +345,198 @@ body {
   line-height: 1.5;
   color: color-mix(in srgb, var(--color-ink) 75%, transparent);
 }
+
+/* ---- Staff management panel (step13) -------------------------------------- */
+.panel {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 4rem;
+}
+
+.panel__header {
+  margin-bottom: 1.25rem;
+}
+
+.panel__header h1 {
+  margin: 0;
+  font-family: var(--font-display-stack);
+  font-weight: 600;
+  font-size: 1.5rem;
+  color: var(--color-ink);
+}
+
+.panel__subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+.panel__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  padding: 0.875rem;
+  margin-bottom: 1.25rem;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+  border-radius: 0.625rem;
+}
+
+.panel__filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 9rem;
+  flex: 1 1 9rem;
+}
+
+.panel__filter label,
+.status-control__field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+}
+
+.panel__filter select,
+.status-control select,
+.status-control textarea {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  font: inherit;
+  color: var(--color-ink);
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 22%, transparent);
+  border-radius: 0.5rem;
+}
+
+.panel__filter-submit,
+.status-control__submit {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-accent);
+  border: 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.panel__filter-submit[disabled],
+.status-control__submit[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.panel__empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+  background: #fff;
+  border: 1px dashed color-mix(in srgb, var(--color-ink) 20%, transparent);
+  border-radius: 0.625rem;
+}
+
+.panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.panel-card {
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+  border-radius: 0.75rem;
+}
+
+.panel-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-card__category {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--cat-fallback);
+}
+
+.panel-card__category.cat-bache {
+  background: var(--cat-bache);
+}
+.panel-card__category.cat-basura {
+  background: var(--cat-basura);
+}
+.panel-card__category.cat-alumbrado {
+  background: var(--cat-alumbrado);
+}
+
+.panel-card__status {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 25%, transparent);
+  color: color-mix(in srgb, var(--color-ink) 80%, transparent);
+}
+
+.panel-card__hidden {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: #b02a37;
+  background: color-mix(in srgb, #b02a37 12%, transparent);
+}
+
+.panel-card__date {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
+.panel-card__desc {
+  margin: 0.625rem 0 0.875rem;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--color-ink) 85%, transparent);
+}
+
+.status-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  align-items: flex-end;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+.status-control__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
+.status-control textarea {
+  resize: vertical;
+  min-height: 2.5rem;
+}
+
+.status-control__error {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #b02a37;
+}
