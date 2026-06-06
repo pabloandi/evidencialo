@@ -344,3 +344,26 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > visible y excluir el invisible. Anclar el contrato en pgTAP (`not prosecdef`).
 > get_advisors security pasó de 2 WARN a 0. Ver 0010_reports_in_view_invoker.sql.
 <!-- tags: supabase, security-definer, invoker, rls, linter, anon | created: 2026-06-04 -->
+
+### fix-20260605-maplibre-css-collapse-and-runtime-qa
+> El mapa de MapLibre renderizaba EN BLANCO en producción aunque tiles (MapTiler
+> 200) y datos (/api/reports 200) cargaban: el contenedor colapsaba a `height:0`.
+> Causa: MapLibre añade su propia clase `.maplibregl-map` (de maplibre-gl.css,
+> importado en el componente) con `position: relative` — MISMA especificidad que
+> tu `.map-canvas { position:absolute; inset:0 }`, y al cargar DESPUÉS en la
+> cascada, gana. Un box `relative` con `inset` y sin altura explícita colapsa a 0.
+> Regla: NO posiciones el contenedor del mapa con `absolute; inset:0` (MapLibre lo
+> pisa); dale `width:100%; height:100%` contra un padre con altura definida
+> (`.map-root` absolute inset:0). Vale para cualquier lib que inyecte su propia
+> clase de posición (mapbox-gl igual). CLAVE METODOLÓGICA: esto NO lo atrapan
+> unit tests, tsc ni `next build` — pasaron todos con el mapa invisible. SOLO la
+> QA runtime con /agent-browser lo encontró (canvas clientHeight 0 vía eval +
+> screenshot en blanco). Para mapas WebGL: agent-browser ve el DOM/canvas dims y
+> el screenshot, pero NO los markers (están en el canvas GL, no en el a11y-tree) →
+> verificar markers por (a) /api/reports devuelve N, (b) screenshot visual, (c)
+> click sintético `dispatchEvent(MouseEvent)` en el pixel del marker → popup. Pan:
+> focar el canvas + `press Arrow*` (teclado MapLibre) → nuevo /api/reports?bbox=.
+> `agent-browser viewport/resize` no existía en esta versión (2.x) → móvil se
+> valida por el @media en CSS, no por screenshot. Ver MapView.tsx + globals.css
+> `.map-canvas` (0010-frontend, commit 0a07da3).
+<!-- tags: maplibre, css, cascade, webgl, agent-browser, runtime-qa, frontend | created: 2026-06-05 -->
