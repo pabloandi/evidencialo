@@ -367,3 +367,29 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > valida por el @media en CSS, no por screenshot. Ver MapView.tsx + globals.css
 > `.map-canvas` (0010-frontend, commit 0a07da3).
 <!-- tags: maplibre, css, cascade, webgl, agent-browser, runtime-qa, frontend | created: 2026-06-05 -->
+
+### fix-20260605-public-detail-signed-urls-and-rsc-caching
+> Página pública de detalle (`/reportes/[id]`, step12) que sirve media de un bucket
+> PRIVADO (`report-media`). Patrón: RSC server-side con el ADMIN client (service-role,
+> nunca expuesto al cliente — no `"use client"`, solo se serializa el objeto plano de
+> datos) que (a) lee con filtro EXPLÍCITO `is_visible=true` + SOLO columnas públicas
+> (jamás `reporter_id`/`location`), (b) filtra media a `processing_state='processed'`
+> (saneada), (c) minta signed URLs de descarga `storage.from(bucket).createSignedUrl(path, ttl)`.
+> No-visible e inexistente devuelven AMBOS `null` → un solo `notFound()` → 404 idéntico
+> (sin existence-leak / IDOR). Guard UUID antes del SELECT → un id malformado 404ea sin
+> el 500 de `invalid input syntax for type uuid`. (1) TRAMPA DE CACHÉ: `export const
+> revalidate = N` NO hace nada si el render usa el admin client (supabase-js hace fetch
+> `cache:'no-store'` → la ruta sale `ƒ Dynamic` en `next build`, ISR jamás ocurre).
+> Verificar el tipo de ruta en el output de build y NO escribir prosa que afirme una
+> ventana de caché inexistente. Dinámico aquí es de hecho más seguro (signed URL fresca
+> por request, sin riesgo de expiración). Si se quiere caché real → Cache Components
+> (`'use cache'`+`cacheLife`), que reintroduce el riesgo de URL expirada. (2) `generateMetadata`
+> Y el componente de página llaman ambos al loader → DOBLE lectura + doble minteo de
+> signed URLs por request; envolver en `React.cache()` (`import { cache } from "react"`)
+> dedupe per-request. (3) Next 16: los params de ruta dinámica son ASYNC (`params:
+> Promise<{id}>` → `await params`). (4) `<img>` con signed URL: no se puede `next/image`
+> (token efímero, sin remotePattern estable) → `<img>` con eslint-disable + pasar
+> `width`/`height` guardados para reservar espacio (CLS). QA runtime (agent-browser):
+> la signed URL sale como `/storage/v1/object/sign/...?token=...` 200; 404s vía
+> `curl -o /dev/null -w "%{http_code}"`. Ver reportDetailService.ts + (public)/reportes/[id]/page.tsx.
+<!-- tags: nextjs, rsc, supabase, signed-urls, private-bucket, caching, react-cache, security | created: 2026-06-05 -->
