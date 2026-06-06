@@ -42,14 +42,26 @@ body {
 
 /* ---- Full-screen map shell ------------------------------------------------ */
 .public-map-shell,
-.map-root,
-.map-canvas {
+.map-root {
   position: absolute;
   inset: 0;
 }
 
 .map-root {
   overflow: hidden;
+}
+
+/*
+ * The map container fills `.map-root` with explicit width/height rather than
+ * `position: absolute; inset: 0`. MapLibre adds its own `.maplibregl-map` class
+ * (from maplibre-gl.css) which sets `position: relative` at equal specificity
+ * and, loading after globals.css, wins the cascade — collapsing an inset-based
+ * box to height 0 (an invisible map). Explicit 100%/100% against the
+ * definite-height `.map-root` is robust regardless of that position override.
+ */
+.map-canvas {
+  width: 100%;
+  height: 100%;
 }
 
 /* ---- Top header (translucent, blurred) ------------------------------------ */
