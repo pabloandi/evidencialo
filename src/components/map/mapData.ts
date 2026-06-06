@@ -10,7 +10,16 @@
 
 import type { ExpressionSpecification } from "maplibre-gl";
 
+import {
+  CATEGORY_COLORS,
+  CATEGORY_LABELS,
+  STATUS_LABELS,
+} from "@/lib/reportLabels";
 import type { ReportMarker } from "@/lib/services/reportService";
+
+// Re-export the shared labels so existing map imports (`./mapData`) keep working
+// while the source of truth lives in the framework-free `@/lib/reportLabels`.
+export { CATEGORY_COLORS, CATEGORY_LABELS, STATUS_LABELS };
 
 const LNG_MIN = -180;
 const LNG_MAX = 180;
@@ -26,34 +35,8 @@ const MAX_SPAN_DEG = 5;
 // the edges apart by a hair so the request is always a valid, non-empty box.
 const MIN_SPAN_DEG = 1e-6;
 
-/** Marker fill colors per category slug. Drives both the legend and the layer. */
-export const CATEGORY_COLORS: Record<string, string> = {
-  bache: "#E8590C",
-  basura: "#2F9E44",
-  alumbrado: "#1971C2",
-};
-
 /** Neutral gray for any slug the client does not yet know about. */
 const CATEGORY_FALLBACK = "#868E96";
-
-/** Spanish display labels per category slug (legend + popup chip). */
-export const CATEGORY_LABELS: Record<string, string> = {
-  bache: "Bache",
-  basura: "Basura",
-  alumbrado: "Alumbrado",
-};
-
-/**
- * Spanish display labels for the `report_status` enum (popup status badge). The
- * popup uses `STATUS_LABELS[status] ?? status` so a future enum value degrades
- * to its raw slug instead of rendering an ugly capitalized snake_case string.
- */
-export const STATUS_LABELS: Record<string, string> = {
-  nuevo: "Nuevo",
-  en_proceso: "En proceso",
-  resuelto: "Resuelto",
-  descartado: "Descartado",
-};
 
 /** Resolve a category slug to its marker color, with a neutral fallback. */
 export function categoryColor(slug: string): string {

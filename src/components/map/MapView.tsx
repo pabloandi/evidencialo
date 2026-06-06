@@ -50,6 +50,7 @@ function escapeHtml(value: string): string {
 
 /** Build the popup HTML from PUBLIC feature properties only (never reporter_id). */
 function popupHtml(props: Record<string, unknown>, now: Date): string {
+  const id = String(props.id ?? "");
   const category = String(props.category ?? "");
   const status = String(props.status ?? "");
   const createdAt = String(props.created_at ?? "");
@@ -64,6 +65,7 @@ function popupHtml(props: Record<string, unknown>, now: Date): string {
       <span class="map-popup__chip" style="background:${color}">${escapeHtml(label)}</span>
       <span class="map-popup__status">${escapeHtml(statusLabel)}</span>
       ${relative ? `<time class="map-popup__date">${escapeHtml(relative)}</time>` : ""}
+      ${id ? `<a class="map-popup__link" href="/reportes/${escapeHtml(id)}">Ver detalle</a>` : ""}
     </div>
   `;
 }
