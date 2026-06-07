@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { getSessionRole } from "@/lib/services/authz";
 import {
   CATEGORY_COLORS,
   CATEGORY_LABELS,
@@ -68,12 +69,19 @@ function excerpt(text: string | null): string {
 }
 
 export default async function MisReportesPage() {
+  const { userId } = await getSessionRole();
   const supabase = await createServerSupabase();
 
-  // RLS `reports_select_own` returns ONLY this user's rows (incl. is_visible=false).
+  // Scope to the user's OWN reports EXPLICITLY. RLS alone is not enough here:
+  // `reports` has multiple PERMISSIVE select policies that are OR-ed, so
+  // `reports_select_public` (is_visible = true) would also let this query read
+  // every public report — not just the user's. The explicit `reporter_id` filter
+  // (matching `reports_select_own`) is the real scoping; RLS is defense in depth.
+  // The `(account)` layout guarantees a session, so `userId` is non-null here.
   const { data, error } = await supabase
     .from("reports")
     .select("id, status, created_at, is_visible, description, categories(slug)")
+    .eq("reporter_id", userId ?? "")
     .order("created_at", { ascending: false })
     .limit(ROW_LIMIT);
 
