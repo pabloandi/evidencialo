@@ -237,8 +237,16 @@ export default function MapView() {
       />
 
       <header className="map-header">
-        <h1 className="map-header__brand">evidencialo</h1>
-        <p className="map-header__tagline">Reportes ciudadanos en tu ciudad</p>
+        <div className="map-header__brand-group">
+          <h1 className="map-header__brand">evidencialo</h1>
+          <p className="map-header__tagline">Reportes ciudadanos en tu ciudad</p>
+        </div>
+        {/* Static link: when anonymous, the (account) gate redirects to /ingresar. */}
+        <nav className="map-header__nav" aria-label="Tu cuenta">
+          <a className="map-header__nav-link" href="/mis-reportes">
+            Mis reportes
+          </a>
+        </nav>
       </header>
 
       <section className="map-legend" aria-label="Categorías de reportes">

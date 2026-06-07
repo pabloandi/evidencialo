@@ -18,6 +18,9 @@ const admin = enabled ? createAdminSupabase() : null;
 const uniq = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const KEY = `it-${uniq()}`;
 const ATOMIC_KEY = `it-atomic-${uniq()}`;
+const OWNED_KEY = `it-owned-${uniq()}`;
+const ANON_KEY = `it-anon-${uniq()}`;
+const DANGLING_KEY = `it-dangling-${uniq()}`;
 
 const baseline: ValidReportInput = {
   category: "bache",
@@ -29,7 +32,10 @@ const baseline: ValidReportInput = {
 
 afterAll(async () => {
   if (admin) {
-    await admin.from("reports").delete().in("idempotency_key", [KEY, ATOMIC_KEY]);
+    await admin
+      .from("reports")
+      .delete()
+      .in("idempotency_key", [KEY, ATOMIC_KEY, OWNED_KEY, ANON_KEY, DANGLING_KEY]);
   }
 });
 
@@ -98,6 +104,70 @@ describe.runIf(enabled)("createReport (integration, local DB)", () => {
       .eq("idempotency_key", ATOMIC_KEY)
       .maybeSingle();
     expect(anyReport).toBeNull();
+  });
+});
+
+// INTEGRATION arbiter for owner capture (citizen-my-reports.scenarios.md
+// SCEN-004): the create path persists `reporter_id` = the passed user (a real
+// seeded auth user, since reporter_id FKs auth.users(id)) when authenticated,
+// and `null` when anonymous. This is the precondition that makes the RLS-scoped
+// "mis reportes" view (SCEN-001/002) return anything at all.
+describe.runIf(enabled)("createReport owner capture (integration, local DB)", () => {
+  let userId: string | null = null;
+
+  afterAll(async () => {
+    // Delete the owned report first (FK), then the seeded auth user.
+    if (admin) {
+      await admin.from("reports").delete().eq("idempotency_key", OWNED_KEY);
+      if (userId) await admin.auth.admin.deleteUser(userId);
+    }
+  });
+
+  it("persists reporter_id = the authenticated user; null for an anonymous create (SCEN-004)", async () => {
+    // Seed a real auth user so the reporter_id FK to auth.users(id) is satisfied.
+    const email = `it-owner-${uniq()}@example.test`;
+    const { data: created, error: userErr } = await admin!.auth.admin.createUser({
+      email,
+      password: `pw-${uniq()}`,
+      email_confirm: true,
+    });
+    expect(userErr).toBeNull();
+    userId = created!.user!.id;
+
+    // Authenticated create → reporter_id is that user.
+    const owned = await createReport(baseline, OWNED_KEY, userId, admin!);
+    const { data: ownedRow } = await admin!
+      .from("reports")
+      .select("reporter_id")
+      .eq("id", owned.report.id)
+      .single();
+    expect(ownedRow!.reporter_id).toBe(userId);
+
+    // Anonymous create (no reporterId) → reporter_id stays null.
+    const anon = await createReport(baseline, ANON_KEY, null, admin!);
+    const { data: anonRow } = await admin!
+      .from("reports")
+      .select("reporter_id")
+      .eq("id", anon.report.id)
+      .single();
+    expect(anonRow!.reporter_id).toBeNull();
+
+    // Dangling author (a uuid NOT in auth.users — e.g. an account deleted while a
+    // signed token is still cached) is demoted to anonymous, NOT a FK-500 on the
+    // shared write path (HIGH fix). The report is still created.
+    const dangling = await createReport(
+      baseline,
+      DANGLING_KEY,
+      "00000000-0000-0000-0000-0000000000ff",
+      admin!,
+    );
+    expect(dangling.report.id).toBeTruthy();
+    const { data: danglingRow } = await admin!
+      .from("reports")
+      .select("reporter_id")
+      .eq("id", dangling.report.id)
+      .single();
+    expect(danglingRow!.reporter_id).toBeNull();
   });
 });
 

@@ -156,6 +156,13 @@ describe("POST /api/reports — anti-spam gates (step06)", () => {
     expect(body.report_id).toBe("rep-1");
     expect(verifyCaptchaMock).toHaveBeenCalledWith(VALID_TOKEN, "203.0.113.5");
     expect(createReportMock).toHaveBeenCalledOnce();
+    // step14: an anonymous create forwards reporterId = null (3rd arg) — the
+    // report stays anonymous, never owned by anyone (SCEN-004 anonymous half).
+    expect(createReportMock).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      null,
+    );
   });
 
   it("lets an authenticated citizen under the limit succeed with NO captcha and never calls siteverify (SCEN-005)", async () => {
@@ -171,6 +178,13 @@ describe("POST /api/reports — anti-spam gates (step06)", () => {
     expect(verifyCaptchaMock).not.toHaveBeenCalled();
     // Rate-limit identified by user id, not IP.
     expect(checkRateLimitMock).toHaveBeenCalledWith("user:u-7");
+    // step14: the authenticated user id is forwarded as reporterId (3rd arg) so
+    // the report is owned by them (SCEN-004 authenticated half).
+    expect(createReportMock).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      "u-7",
+    );
   });
 
   it("fails CLOSED on a captcha verification error → 403 (SCEN-007)", async () => {
@@ -328,8 +342,13 @@ describe("POST /api/reports — create path (step05)", () => {
         },
       ],
     });
-    // idempotency key forwarded to the service
-    expect(createReportMock).toHaveBeenCalledWith(expect.anything(), "k-001");
+    // idempotency key + the authenticated user id forwarded to the service
+    // (step14 owner capture: the citizen's report is associated with them).
+    expect(createReportMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "k-001",
+      "u-1",
+    );
   });
 
   it("returns 200 with the same report_id on idempotent replay", async () => {
@@ -425,11 +444,13 @@ describe("POST /api/reports — create path (step05)", () => {
       1,
       expect.anything(),
       undefined,
+      "u-1",
     );
     expect(createReportMock).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
       undefined,
+      "u-1",
     );
   });
 

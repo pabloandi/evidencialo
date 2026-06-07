@@ -91,9 +91,19 @@ async function signUpload(
   return { signedUrl: data.signedUrl, token: data.token, path: data.path };
 }
 
+/**
+ * Create a report (+ its media) atomically and mint signed upload URLs.
+ *
+ * `reporterId` associates the new report with its author (step14): the POST
+ * route forwards the session user id, so a signed-in citizen's report becomes
+ * visible to them in `/mis-reportes` via the `reports_select_own` RLS policy.
+ * `null` (the default) keeps the report anonymous — unchanged behavior for
+ * anonymous creates and every existing caller that omits the argument.
+ */
 export async function createReport(
   input: ValidReportInput,
   idempotencyKey?: string,
+  reporterId: string | null = null,
   client: SupabaseClient = createAdminSupabase(),
 ): Promise<CreateReportResult> {
   // 1. Resolve category slug -> id. Unknown slug is a client error (SCEN-007).
@@ -130,6 +140,7 @@ export async function createReport(
     p_description: input.description ?? null,
     p_idempotency_key: idempotencyKey ?? null,
     p_media: mediaPayload,
+    p_reporter_id: reporterId,
   });
 
   if (error) {

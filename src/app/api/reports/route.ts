@@ -135,7 +135,9 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const result = await createReport(validation.value, idempotencyKey);
+    // Forward the resolved session user (null for anonymous) so the report is
+    // associated with its author — the precondition for `/mis-reportes` (step14).
+    const result = await createReport(validation.value, idempotencyKey, userId);
     return Response.json(
       {
         report_id: result.report.id,

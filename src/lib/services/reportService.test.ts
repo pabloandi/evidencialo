@@ -89,7 +89,7 @@ function makeFakeClient(behavior: {
     __inspect: { signedCalls, rpcCalls },
   };
 
-  return client as unknown as Parameters<typeof createReport>[2] & {
+  return client as unknown as Parameters<typeof createReport>[3] & {
     __inspect: {
       signedCalls: string[];
       rpcCalls: Array<{ fn: string; args: Record<string, unknown> }>;
@@ -110,7 +110,7 @@ describe("createReport", () => {
       },
     });
 
-    const result = await createReport(baseline, "k-001", client);
+    const result = await createReport(baseline, "k-001", null, client);
 
     expect(result.idempotent).toBe(false);
     expect(result.report.id).toBe(REPORT_ID);
@@ -129,8 +129,29 @@ describe("createReport", () => {
     expect(call.args.p_idempotency_key).toBe("k-001");
     expect(call.args.p_lng).toBe(baseline.lng);
     expect(call.args.p_lat).toBe(baseline.lat);
+    // Omitting reporterId defaults to an anonymous report (p_reporter_id null).
+    expect(call.args.p_reporter_id).toBeNull();
     // The persisted path was the one signed.
     expect(client.__inspect.signedCalls[0]).toBe(`${REPORT_ID}/0.jpg`);
+  });
+
+  it("forwards a reporterId as p_reporter_id so the report is owned (SCEN-004 backend)", async () => {
+    const client = makeFakeClient({
+      categoryRow: { id: CATEGORY_ID },
+      rpcResult: {
+        report_id: REPORT_ID,
+        idempotent: false,
+        media: [
+          { id: "media-0", type: "image", storage_path: `${REPORT_ID}/0.jpg` },
+        ],
+      },
+    });
+
+    await createReport(baseline, "k-owned", "user-123", client);
+
+    const call = client.__inspect.rpcCalls[0];
+    expect(call.fn).toBe("create_report");
+    expect(call.args.p_reporter_id).toBe("user-123");
   });
 
   it("returns the SAME report and idempotent:true on a replay (SCEN-002)", async () => {
@@ -149,7 +170,7 @@ describe("createReport", () => {
       },
     });
 
-    const result = await createReport(baseline, "k-002", client);
+    const result = await createReport(baseline, "k-002", null, client);
 
     expect(result.idempotent).toBe(true);
     expect(result.report.id).toBe(REPORT_ID);
@@ -163,7 +184,7 @@ describe("createReport", () => {
     const client = makeFakeClient({ categoryRow: null });
 
     await expect(
-      createReport({ ...baseline, category: "inexistente" }, "k-007", client),
+      createReport({ ...baseline, category: "inexistente" }, "k-007", null, client),
     ).rejects.toBeInstanceOf(CategoryInvalidError);
 
     // The write transaction was never started.
@@ -176,7 +197,7 @@ describe("createReport", () => {
       rpcError: { message: "invalid input value for enum media_type" },
     });
 
-    await expect(createReport(baseline, "k-fail", client)).rejects.toThrow(
+    await expect(createReport(baseline, "k-fail", null, client)).rejects.toThrow(
       /create_report RPC failed/,
     );
     // No signed URLs minted when the write fails.
