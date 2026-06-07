@@ -241,8 +241,12 @@ export default function MapView() {
           <h1 className="map-header__brand">evidencialo</h1>
           <p className="map-header__tagline">Reportes ciudadanos en tu ciudad</p>
         </div>
-        {/* Static link: when anonymous, the (account) gate redirects to /ingresar. */}
-        <nav className="map-header__nav" aria-label="Tu cuenta">
+        {/* "Reportar" is the primary action; "Mis reportes" gates to /ingresar
+            when anonymous via the (account) layout. */}
+        <nav className="map-header__nav" aria-label="Acciones">
+          <a className="map-header__nav-cta" href="/reportar">
+            Reportar
+          </a>
           <a className="map-header__nav-link" href="/mis-reportes">
             Mis reportes
           </a>

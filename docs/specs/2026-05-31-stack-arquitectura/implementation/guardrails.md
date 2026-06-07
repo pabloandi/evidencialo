@@ -466,3 +466,29 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > a create_report; sin sesión queda null (anónimo). Ver
 > (account)/mis-reportes/page.tsx + 0012_create_report_reporter.sql.
 <!-- tags: supabase, rls, permissive-policies, data-isolation, runtime-qa, security | created: 2026-06-05 -->
+
+### fix-20260605-citizen-capture-flow-and-capacitor-shell
+> El paso 15 ("shell Capacitor") tenía una dependencia oculta: la UI de captura del
+> ciudadano — la ACCIÓN CENTRAL de la app — NUNCA se construyó (solo el backend). Hubo
+> que crear `CaptureForm` + `/reportar`. FLUJO DE ENVÍO (3 pasos, el contrato real):
+> (1) `POST /api/reports` con body `{category(slug), lng, lat, description?, media:[{type,
+> mime, size}]}` + header `Idempotency-Key` (uuid) + `cf-turnstile-response` SOLO si
+> anónimo → devuelve `{report_id, media:[{id, upload:{signedUrl, token, path}}]}`. (2)
+> subir los BYTES RAW con `createBrowserSupabase().storage.from('report-media')
+> .uploadToSignedUrl(upload.path, upload.token, file)` (path/token son server-issued,
+> scoped a ese objeto — el cliente no elige path). (3) `POST /api/media {report_id,
+> media_id}` → strip-EXIF + procesa → el trigger de visibilidad publica el reporte.
+> AUTHZ: el captcha lo enforcea el SERVER (cliente = UX only); autenticado exento.
+> CAPACITOR: `capacitor.config.ts` con `server.url` env-driven (la app live se carga en
+> el WebView; webDir es fallback), `cleartext:false`; cámara/GPS detrás de
+> `Capacitor.isNativePlatform()` con fallback web (`navigator.geolocation`, file input
+> con `capture="environment"`); plugins por dynamic import → no contaminan el bundle web
+> (verificar que `com.evidencialo.app` NO aparece en `.next/`). EL APK NO ES CONSTRUIBLE
+> sin Android SDK (`ANDROID_HOME`/gradle) — `npx cap add android` + `gradlew
+> assembleDebug` es Fase B en una máquina con Android Studio. QA RUNTIME de la captura:
+> `agent-browser geo`/`viewport` NO existen en esta versión del CLI → mockear
+> `navigator.geolocation.getCurrentPosition` vía `agent-browser eval` antes de "Usar mi
+> ubicación"; subir la foto con `agent-browser upload @ref archivo.jpg`; verificar la
+> cadena 201→200→200 + el reporte visible/processed/owned en DB. Ver CaptureForm.tsx +
+> lib/native/capture.ts + capacitor.config.ts.
+<!-- tags: capacitor, capture, signed-upload, supabase-storage, android, runtime-qa, mobile | created: 2026-06-05 -->
