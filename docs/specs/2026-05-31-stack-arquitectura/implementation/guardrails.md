@@ -449,3 +449,20 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > flujo REAL (form /ingresar → /panel) reemplaza la inyección de cookie de step13.
 > Ver (auth)/ingresar+registro/actions.ts + authActions.ts.
 <!-- tags: supabase, auth, server-actions, nextjs, redirect, anti-enumeration, session | created: 2026-06-05 -->
+
+### fix-20260605-rls-permissive-policies-or-need-explicit-filter
+> "Mis reportes" (step14) mostraba reportes AJENOS. Causa: las RLS PERMISSIVE de
+> una tabla se COMBINAN CON OR. `reports` tiene `reports_select_own`
+> (`reporter_id=auth.uid()`), `reports_select_public` (`is_visible=true`) y
+> `reports_select_staff`. Una vista "solo los míos" que hace
+> `select * from reports` confiando SOLO en RLS devuelve own OR public OR staff →
+> un usuario ve también todos los reportes públicos. REGLA: para una vista
+> "propios" cuando coexiste una policy de lectura pública, FILTRAR EXPLÍCITAMENTE
+> `.eq('reporter_id', userId)` (RLS como defensa en profundidad, no como el
+> alcance). La security review lo perdió (asumió que solo aplica la policy "own");
+> lo atrapó la QA RUNTIME con un reporte ajeno VISIBLE sembrado (un reporte ajeno
+> NO visible sí habría sido excluido por RLS, ocultando el bug — sembrar el caso
+> visible es clave). Capturar reporter_id al crear: step14 añadió `p_reporter_id`
+> a create_report; sin sesión queda null (anónimo). Ver
+> (account)/mis-reportes/page.tsx + 0012_create_report_reporter.sql.
+<!-- tags: supabase, rls, permissive-policies, data-isolation, runtime-qa, security | created: 2026-06-05 -->
