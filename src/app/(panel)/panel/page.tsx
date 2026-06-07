@@ -1,3 +1,4 @@
+import SignOutButton from "@/components/auth/SignOutButton";
 import StatusControl from "@/components/panel/StatusControl";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/reportLabels";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -75,9 +76,21 @@ export default async function PanelPage({
   const { data: reportsData, error } = await query;
   const reports = (reportsData ?? []) as unknown as ReportRow[];
 
+  // Staff identity for the header. The `(panel)` layout already gated this
+  // route, so reading the user here just labels the session and offers sign-out.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return (
     <main className="panel">
       <header className="panel__header">
+        <div className="panel__session">
+          <span className="panel__session-label">
+            Sesión de staff{user?.email ? ` · ${user.email}` : ""}
+          </span>
+          <SignOutButton />
+        </div>
         <h1>Panel de gestión</h1>
         <p className="panel__subtitle">
           {reports.length === ROW_LIMIT
