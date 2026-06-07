@@ -425,3 +425,27 @@ Léelas antes de ejecutar cualquier `.code-task.md`. Append-only.
 > (`/rest/v1/rpc/<fn>` con `Authorization: Bearer <jwt real>`) prueba E3/E4/E7 con
 > auth real, no claims simulados. Ver 0011 + statusService + (panel)/panel/page.tsx.
 <!-- tags: supabase, security-definer, anon-grant, advisor, authz, audit, agent-browser, session, runtime-qa | created: 2026-06-05 -->
+
+### fix-20260605-supabase-server-action-auth
+> UI de auth email+password con SERVER ACTIONS (`'use server'`) — patrón canónico
+> Supabase Next (Context7): `createServerSupabase()` (client request-bound) +
+> `auth.signInWithPassword`/`signUp`/`signOut`, luego `revalidatePath('/','layout')`
+> + `redirect`. CLAVES: (1) `redirect()` LANZA (NEXT_REDIRECT) → NUNCA dentro de un
+> try/catch que lo trague (convertiría un login OK en no-op); llamarlo al top-level
+> tras manejar el `{ error }` destructurado. (2) REDIRECT POR ROL tras signIn
+> FUNCIONA fiable: `signInWithPassword` await-ea `_notifyAllSubscribers('SIGNED_IN')`
+> → el adapter de cookie escribe la sesión ANTES de resolver, así que un segundo
+> `createServerSupabase()`+`getSessionRole()` en la misma request ve la cookie nueva
+> (el claim `user_role` ya viene del access-token hook a la emisión). staff→/panel,
+> citizen→/. El redirect es UX; el gate del `(panel)/layout` (fail-closed) es el
+> límite real. (3) ANTI-ENUMERACIÓN: un mensaje genérico para CUALQUIER fallo de
+> credencial (no revelar si el email existe/está sin confirmar); y OJO con el copy
+> de registro: GoTrue devuelve la MISMA forma (user obfuscado, sin session, sin
+> error) para un email YA registrado y NO manda correo → el notice NO debe prometer
+> "te enviamos un correo" (callejón sin salida); copy genérico que apunta a iniciar
+> sesión. (4) signOut: capturar `{ error }` y loguear (observabilidad), el redirect
+> sigue igual. (5) NO había UI de login (step04 solo el gate) — esta feature la
+> añade. QA RUNTIME: con un usuario sembrado `email_confirm:true` + rol staff, el
+> flujo REAL (form /ingresar → /panel) reemplaza la inyección de cookie de step13.
+> Ver (auth)/ingresar+registro/actions.ts + authActions.ts.
+<!-- tags: supabase, auth, server-actions, nextjs, redirect, anti-enumeration, session | created: 2026-06-05 -->
