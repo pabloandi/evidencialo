@@ -57,9 +57,16 @@ jobs:
       - if: steps.check.outputs.enabled == 'true'
         uses: actions/checkout@v4
       - if: steps.check.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - if: steps.check.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      # `vercel build` detects pnpm-lock.yaml and shells out to pnpm to install,
+      # so pnpm must be on PATH here too (the quality job has it, this job didn't)
+      # — without it the build fails with `spawn pnpm ENOENT`.
       - if: steps.check.outputs.enabled == 'true'
         run: npm install -g vercel@latest
       - if: steps.check.outputs.enabled == 'true'
