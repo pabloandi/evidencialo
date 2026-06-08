@@ -66,6 +66,7 @@ declare global {
         el: HTMLElement,
         opts: { sitekey: string; callback: (token: string) => void },
       ) => string;
+      remove: (widgetId: string) => void;
     };
   }
 }
@@ -124,14 +125,19 @@ export default function CaptureForm() {
   const needsCaptcha = anonymous && Boolean(TURNSTILE_SITE_KEY);
 
   // Load + render the Turnstile widget only for anonymous callers with a key.
+  // Cleanup is mandatory: Cloudflare keeps internal state per widget id, so on
+  // teardown (unmount / needsCaptcha flips false) we must `turnstile.remove(id)`
+  // or Cloudflare logs "Cannot find Widget …" and leaks the widget.
   useEffect(() => {
     if (!needsCaptcha) return;
     const container = turnstileRef.current;
     if (!container) return;
 
+    let widgetId: string | undefined;
+
     function renderWidget() {
       if (window.turnstile && container && container.childElementCount === 0) {
-        window.turnstile.render(container, {
+        widgetId = window.turnstile.render(container, {
           sitekey: TURNSTILE_SITE_KEY!,
           callback: (token: string) => setCaptchaToken(token),
         });
@@ -140,15 +146,33 @@ export default function CaptureForm() {
 
     if (window.turnstile) {
       renderWidget();
-      return;
+    } else {
+      // Reuse an existing api.js tag instead of appending a duplicate.
+      const existing = document.querySelector<HTMLScriptElement>(
+        'script[src*="turnstile/v0/api.js"]',
+      );
+      if (existing) {
+        existing.addEventListener("load", renderWidget);
+      } else {
+        const script = document.createElement("script");
+        script.src =
+          "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.onload = renderWidget;
+        document.head.appendChild(script);
+      }
     }
 
-    const script = document.createElement("script");
-    script.src =
-      "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    script.async = true;
-    script.onload = renderWidget;
-    document.head.appendChild(script);
+    return () => {
+      // Defensive: a Turnstile-internal throw must never break React teardown.
+      if (widgetId && window.turnstile?.remove) {
+        try {
+          window.turnstile.remove(widgetId);
+        } catch {
+          // ignore — widget already gone / Turnstile internal error.
+        }
+      }
+    };
   }, [needsCaptcha]);
 
   function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
