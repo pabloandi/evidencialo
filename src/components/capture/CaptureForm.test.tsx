@@ -24,6 +24,29 @@ vi.mock("@capacitor/core", () => ({
   Capacitor: { isNativePlatform: () => false },
 }));
 
+// Mock LocationPicker so this stays a CaptureForm integration unit test (no
+// MapLibre/WebGL). The mock renders deterministic buttons that drive the
+// onConfirm/onCancel contract; the picked point is the SCEN-001 fixture.
+const PICKED_POINT = { lat: 4.65, lng: -74.05 };
+vi.mock("./LocationPicker", () => ({
+  default: ({
+    onConfirm,
+    onCancel,
+  }: {
+    onConfirm: (p: { lat: number; lng: number }) => void;
+    onCancel: () => void;
+  }) => (
+    <div role="dialog" aria-label="Elegir ubicación en el mapa">
+      <button type="button" onClick={() => onConfirm(PICKED_POINT)}>
+        mock-confirm
+      </button>
+      <button type="button" onClick={onCancel}>
+        mock-cancel
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("@/lib/supabase/browser", () => ({
   createBrowserSupabase: () => ({
     auth: { getSession },
@@ -135,18 +158,7 @@ describe("SCEN-002: incomplete submission is blocked client-side", () => {
 });
 
 describe("SCEN-001: a complete submission runs the full chain in order", () => {
-  it("POST /api/reports → uploadToSignedUrl → POST /api/media with the right payload", async () => {
-    // Capture geolocation so "Usar mi ubicación" yields coords.
-    const getCurrentPosition = vi.fn(
-      (success: (p: { coords: { latitude: number; longitude: number } }) => void) => {
-        success({ coords: { latitude: 4.61, longitude: -74.08 } });
-      },
-    );
-    Object.defineProperty(navigator, "geolocation", {
-      configurable: true,
-      value: { getCurrentPosition },
-    });
-
+  it("POST /api/reports → uploadToSignedUrl → POST /api/media with the picked point", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       void init; // recorded in mock.calls for the header/body assertions below
       if (url === "/api/reports") {
@@ -185,10 +197,12 @@ describe("SCEN-001: a complete submission runs the full chain in order", () => {
       screen.getByLabelText(/Descripción/),
       "Hueco grande",
     );
+    // Open the picker and confirm the picked point via the mock.
     await user.click(
-      screen.getByRole("button", { name: "Usar mi ubicación" }),
+      screen.getByRole("button", { name: "Elegir ubicación en el mapa" }),
     );
-    await screen.findByText(/Ubicación capturada/);
+    await user.click(screen.getByRole("button", { name: "mock-confirm" }));
+    await screen.findByText(/Ubicación fijada/);
 
     await user.click(screen.getByRole("button", { name: "Enviar reporte" }));
 
@@ -204,8 +218,8 @@ describe("SCEN-001: a complete submission runs the full chain in order", () => {
     );
     expect(JSON.parse(reqInit.body as string)).toEqual({
       category: "bache",
-      lng: -74.08,
-      lat: 4.61,
+      lng: -74.05,
+      lat: 4.65,
       description: "Hueco grande",
       media: [{ type: "image", mime: "image/jpeg", size: 3 }],
     });
@@ -237,5 +251,101 @@ describe("SCEN-001: a complete submission runs the full chain in order", () => {
       reportsIdx,
     );
     expect(uploadToSignedUrl.mock.invocationCallOrder[0]).toBeLessThan(mediaIdx);
+  });
+});
+
+describe("SCEN-003: cancel is a no-op (coords unchanged)", () => {
+  it("keeps the confirmed point after reopen + cancel, and submits the original point", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      void init; // recorded in mock.calls for the body assertion below
+      if (url === "/api/reports") {
+        return {
+          ok: true,
+          json: async () => ({
+            report_id: "report-1",
+            media: [
+              {
+                id: "media-1",
+                type: "image",
+                upload: {
+                  signedUrl: "https://signed/upload",
+                  token: "tok-1",
+                  path: "report-1/media-1.jpg",
+                },
+              },
+            ],
+          }),
+        };
+      }
+      if (url === "/api/media") {
+        return { ok: true, json: async () => ({ processing_state: "done" }) };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<CaptureForm />);
+    await screen.findByRole("option", { name: "Bache" });
+
+    await user.upload(screen.getByLabelText("Foto del problema"), makePhoto());
+    await user.selectOptions(screen.getByLabelText("Categoría"), "bache");
+
+    // Confirm the picked point first.
+    await user.click(
+      screen.getByRole("button", { name: "Elegir ubicación en el mapa" }),
+    );
+    await user.click(screen.getByRole("button", { name: "mock-confirm" }));
+    expect(
+      (await screen.findByText(/Ubicación fijada/)).textContent ?? "",
+    ).toBe("Ubicación fijada: 4.65000, -74.05000");
+
+    // Reopen via "Cambiar" and cancel → coords must NOT change.
+    await user.click(screen.getByRole("button", { name: "Cambiar" }));
+    await user.click(screen.getByRole("button", { name: "mock-cancel" }));
+
+    // Same confirmed point still displayed; picker is closed.
+    expect(screen.getByText(/Ubicación fijada/).textContent ?? "").toBe(
+      "Ubicación fijada: 4.65000, -74.05000",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Elegir ubicación en el mapa" }),
+    ).toBeNull();
+
+    // A submit still carries the ORIGINAL picked point.
+    await user.click(screen.getByRole("button", { name: "Enviar reporte" }));
+    await screen.findByText("¡Reporte enviado!");
+
+    const reportsCall = fetchMock.mock.calls.find((c) => c[0] === "/api/reports");
+    expect(reportsCall).toBeTruthy();
+    const body = JSON.parse((reportsCall![1] as RequestInit).body as string);
+    expect(body.lng).toBe(-74.05);
+    expect(body.lat).toBe(4.65);
+  });
+});
+
+describe('"Cambiar" reopens the picker', () => {
+  it("shows the picker dialog again after a confirmed location", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const user = userEvent.setup();
+    render(<CaptureForm />);
+    await screen.findByRole("option", { name: "Bache" });
+
+    await user.click(
+      screen.getByRole("button", { name: "Elegir ubicación en el mapa" }),
+    );
+    await user.click(screen.getByRole("button", { name: "mock-confirm" }));
+    await screen.findByText(/Ubicación fijada/);
+
+    // Picker closed after confirm.
+    expect(
+      screen.queryByRole("dialog", { name: "Elegir ubicación en el mapa" }),
+    ).toBeNull();
+
+    // "Cambiar" reopens it.
+    await user.click(screen.getByRole("button", { name: "Cambiar" }));
+    expect(
+      screen.getByRole("dialog", { name: "Elegir ubicación en el mapa" }),
+    ).not.toBeNull();
   });
 });

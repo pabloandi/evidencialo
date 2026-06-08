@@ -60,6 +60,10 @@ async function getPositionNative(): Promise<Coordinates> {
   try {
     const position = await Geolocation.getCurrentPosition({
       enableHighAccuracy: true,
+      // Bound the wait so the promise always settles (matches the web path).
+      // Without it a denied/unavailable fix can hang the picker's GPS button
+      // permanently on "Obteniendo ubicación…".
+      timeout: 15000,
     });
     return {
       lat: position.coords.latitude,

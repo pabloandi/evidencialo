@@ -28,11 +28,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   CaptureError,
   capturePhotoNative,
-  getPosition,
   isNative,
 } from "@/lib/native/capture";
+import { INITIAL_CENTER } from "@/lib/map/config";
 import { CATEGORY_LABELS } from "@/lib/reportLabels";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+
+import LocationPicker from "./LocationPicker";
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 const STORAGE_BUCKET = "report-media";
@@ -81,8 +83,7 @@ export default function CaptureForm() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
     null,
   );
-  const [locating, setLocating] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [hasSession, setHasSession] = useState<boolean | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -199,21 +200,11 @@ export default function CaptureForm() {
     }
   }
 
-  async function onUseLocation() {
-    setLocating(true);
-    setLocationError(null);
-    try {
-      const position = await getPosition();
-      setCoords(position);
-    } catch (error) {
-      setLocationError(
-        error instanceof CaptureError
-          ? error.message
-          : "No se pudo obtener tu ubicación.",
-      );
-    } finally {
-      setLocating(false);
-    }
+  // The picker owns GPS now; the form only opens it and stores the picked point.
+  // Open on the current coords if set, else the city default (config is [lng,lat]).
+  function onConfirmLocation(point: { lat: number; lng: number }) {
+    setCoords(point);
+    setPickerOpen(false);
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -232,7 +223,8 @@ export default function CaptureForm() {
     if (!coords) {
       setStatus({
         kind: "error",
-        message: "Captura tu ubicación con el botón “Usar mi ubicación”.",
+        message:
+          "Fija la ubicación con el botón “Elegir ubicación en el mapa”.",
       });
       return;
     }
@@ -418,23 +410,28 @@ export default function CaptureForm() {
 
       <div className="capture-field">
         <span className="capture-field__label">Ubicación</span>
-        <button
-          type="button"
-          className="capture-btn capture-btn--secondary"
-          onClick={onUseLocation}
-          disabled={locating}
-        >
-          {locating ? "Obteniendo ubicación…" : "Usar mi ubicación"}
-        </button>
-        {coords && (
-          <p className="capture-coords" role="status">
-            Ubicación capturada: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
-          </p>
-        )}
-        {locationError && (
-          <p className="capture-error" role="alert">
-            {locationError}
-          </p>
+        {coords ? (
+          <div className="capture-location">
+            <p className="capture-coords" role="status">
+              Ubicación fijada: {coords.lat.toFixed(5)},{" "}
+              {coords.lng.toFixed(5)}
+            </p>
+            <button
+              type="button"
+              className="capture-btn capture-btn--secondary"
+              onClick={() => setPickerOpen(true)}
+            >
+              Cambiar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="capture-btn capture-btn--secondary"
+            onClick={() => setPickerOpen(true)}
+          >
+            Elegir ubicación en el mapa
+          </button>
         )}
       </div>
 
@@ -465,6 +462,16 @@ export default function CaptureForm() {
       >
         {sending ? "Enviando…" : "Enviar reporte"}
       </button>
+
+      {pickerOpen && (
+        <LocationPicker
+          initialCenter={
+            coords ?? { lat: INITIAL_CENTER[1], lng: INITIAL_CENTER[0] }
+          }
+          onConfirm={onConfirmLocation}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
     </form>
   );
 }

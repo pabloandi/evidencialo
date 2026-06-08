@@ -17,6 +17,12 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  hasMapKey,
+  INITIAL_CENTER,
+  INITIAL_ZOOM,
+  mapStyleUrl,
+} from "@/lib/map/config";
 import type { ReportMarker } from "@/lib/services/reportService";
 
 import {
@@ -31,11 +37,6 @@ import {
   STATUS_LABELS,
 } from "./mapData";
 
-const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY;
-
-// Bogotá city center — the default viewport for the public map.
-const INITIAL_CENTER: [number, number] = [-74.08, 4.61];
-const INITIAL_ZOOM = 12;
 const MOVE_DEBOUNCE_MS = 300;
 const SOURCE_ID = "reports";
 const LAYER_ID = "reports-circles";
@@ -80,11 +81,11 @@ export default function MapView() {
 
   useEffect(() => {
     // No key → fallback card is rendered below; never touch MapLibre/WebGL.
-    if (!MAPTILER_KEY) return;
+    if (!hasMapKey()) return;
     const container = containerRef.current;
     if (!container) return;
 
-    const styleUrl = `https://api.maptiler.com/maps/dataviz/style.json?key=${MAPTILER_KEY}`;
+    const styleUrl = mapStyleUrl();
     const map = new maplibregl.Map({
       container,
       style: styleUrl,
@@ -212,7 +213,7 @@ export default function MapView() {
   }, []);
 
   // ---- Missing-key fallback (SCEN-F03): a civic card, never a blank/crash ----
-  if (!MAPTILER_KEY) {
+  if (!hasMapKey()) {
     return (
       <div className="map-fallback" role="alert">
         <div className="map-fallback__card">
