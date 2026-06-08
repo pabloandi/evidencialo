@@ -20,6 +20,12 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      # The sanitize-video test (supabase/functions/sanitize-video/mp4.test.ts)
+      # shells out to ffmpeg to build fixtures and assert GPS/EXIF stripping.
+      # ffmpeg is not preinstalled on ubuntu-latest, so install it before tests
+      # or that security-path test fails with `spawnSync ffmpeg ENOENT`.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
