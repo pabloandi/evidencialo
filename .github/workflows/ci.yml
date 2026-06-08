@@ -57,21 +57,19 @@ jobs:
       - if: steps.check.outputs.enabled == 'true'
         uses: actions/checkout@v4
       - if: steps.check.outputs.enabled == 'true'
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - if: steps.check.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      # `vercel build` detects pnpm-lock.yaml and shells out to pnpm to install,
-      # so pnpm must be on PATH here too (the quality job has it, this job didn't)
-      # — without it the build fails with `spawn pnpm ENOENT`.
       - if: steps.check.outputs.enabled == 'true'
         run: npm install -g vercel@latest
+      # Build REMOTELY on Vercel — NOT a local `--prebuilt` build. A `vercel build`
+      # inside CI cannot read the project's runtime/sensitive env vars (e.g.
+      # SUPABASE_SERVICE_ROLE_KEY is not returned by `vercel pull`), so a prebuilt
+      # deploy 500s at runtime: "Your project's URL and Key are required to create
+      # a Supabase client". A remote build runs on Vercel with full env access —
+      # the exact path a working manual `vercel --prod` takes. Build correctness is
+      # already gated upstream by the `quality` job's `pnpm build`.
       - if: steps.check.outputs.enabled == 'true'
         run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
       - if: steps.check.outputs.enabled == 'true'
-        run: vercel build --prod --token="$VERCEL_TOKEN"
-      - if: steps.check.outputs.enabled == 'true'
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: vercel deploy --prod --token="$VERCEL_TOKEN"
