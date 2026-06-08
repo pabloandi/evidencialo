@@ -42,7 +42,11 @@ that cannot be acted on by location.
   overlay / bottom-sheet that hosts a MapLibre map for choosing one point. It does
   **not** reuse `MapView.tsx` — that component is coupled to fetching reports, marker
   layers, and popups (a different responsibility). The two share only the MapLibre
-  init pattern and the MapTiler `dataviz` style URL (`NEXT_PUBLIC_MAPTILER_KEY`).
+  init pattern and the MapTiler `dataviz` style URL (`NEXT_PUBLIC_MAPTILER_KEY`). To
+  avoid a second hard-coded `dataviz` style string drifting from `MapView.tsx`, extract
+  a small shared map module (e.g. `src/lib/map/config.ts`) exporting `INITIAL_CENTER`,
+  `INITIAL_ZOOM`, and a `mapStyleUrl()` helper; both `MapView` and `LocationPicker`
+  import it.
 - **`src/components/capture/CaptureForm.tsx`** location block changes: the current
   "Usar mi ubicación" (direct GPS) button is replaced by **"Elegir ubicación en el
   mapa"**, which opens `LocationPicker`. The existing `coords` state and submit
@@ -68,8 +72,14 @@ In priority order:
 1. If `CaptureForm` already has `coords` (a previous pick), center there.
 2. Else if a GPS fix is readily available, center there.
 3. Else center on the city default (Bogotá — reuse `INITIAL_CENTER`/`INITIAL_ZOOM`
-   constants, extracted to a shared module so `MapView` and `LocationPicker` agree).
+   from the shared map module so `MapView` and `LocationPicker` agree).
 A short hint tells the user to drag the map or use their location.
+
+**The picker never blocks its open on GPS.** `getPosition()` is async and may prompt
+for permission, so it is never instantly "available." Concretely: open the picker
+immediately centered on prior `coords` (priority 1) or the city default (priority 3),
+and only `flyTo` a GPS fix if a non-blocking `getPosition()` resolves — never await GPS
+before showing the map.
 
 ### Data flow
 
@@ -77,7 +87,8 @@ A short hint tells the user to drag the map or use their location.
   `initialCenter` and an `onConfirm({lat,lng})` / `onCancel` callback.
 - `coords` is set **only** on confirm. Cancel is a no-op.
 - After confirm, the form shows **"Ubicación fijada: {lat}, {lng}"** plus a
-  **"Cambiar"** action that reopens the picker.
+  **"Cambiar"** action that reopens the picker. Coordinates are rendered with
+  `.toFixed(5)`, matching the existing captured-coords display in `CaptureForm.tsx`.
 - The `lng`/`lat` sent to `POST /api/reports` is the picked point.
 
 ### Error handling
@@ -86,8 +97,13 @@ A short hint tells the user to drag the map or use their location.
   mueve el mapa para fijar el punto." Non-blocking; manual pick still works.
 - **No `coords` at submit**: existing validation stands — submit is blocked with the
   location-required message.
-- **Map fails to initialize** (e.g. missing MapTiler key): the picker surfaces a
-  readable error and the user can cancel; submit remains blocked (no silent success).
+- **Map fails to initialize**: this is NEW error surface — `MapView.tsx` only handles
+  the *missing-key* case (a fallback returned before any MapLibre init) and has no
+  try/catch around `new maplibregl.Map(...)`. The picker must add its own handling: a
+  missing-key guard (reuse the shared module's key check) AND a listener on the map
+  `error` event for runtime failures (bad style fetch, WebGL unavailable). On failure
+  the picker shows a readable message and lets the user cancel; submit stays blocked
+  (no silent success).
 
 ## Observable scenarios (SDD holdout)
 
