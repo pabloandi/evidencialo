@@ -54,17 +54,26 @@ incentives/donations (subsystem D).
 - Extend `user_role` enum with **`solver`** (currently `citizen, staff, admin`).
 - New table **`public.solver_profiles`** (1:1 with `profiles`):
   - `id uuid PK REFERENCES profiles(id) ON DELETE CASCADE`
-  - `handle citext UNIQUE NOT NULL` (e.g. `alcaldia-cali`) — used in `/solucionadores/[handle]`
+  - `handle text NOT NULL` + a case-insensitive unique index
+    `create unique index on solver_profiles (lower(handle))` (e.g. `alcaldia-cali`) —
+    used in `/solucionadores/[handle]`. NOTE: `citext` is NOT enabled in this project
+    (only `postgis`); we use `text` + `lower()` index rather than add an extension.
   - `type text NOT NULL CHECK (type IN ('government','influencer','org'))`
   - `bio text NULL`, `avatar_url text NULL`
   - `links jsonb NOT NULL DEFAULT '{}'` (socials/donation links — forward-compat for D)
   - `verified_at timestamptz NOT NULL DEFAULT now()`, `verified_by uuid REFERENCES profiles(id)`
   - `created_at timestamptz NOT NULL DEFAULT now()`
 - **Admin grants** by setting `profiles.role = 'solver'` AND inserting a `solver_profiles`
-  row. Both via an admin-only RPC `grant_solver(...)` (SECURITY DEFINER, `is_admin()` gate)
-  to keep it atomic + audited; no self-service.
-- `private.is_solver()` helper (mirrors `private.is_staff()`): true when the caller's
-  `profiles.role = 'solver'`.
+  row. Both via an admin-only RPC `grant_solver(...)` (SECURITY DEFINER, `private.is_admin()`
+  gate) to keep it atomic + audited; no self-service. Solvers always have a `profiles` row
+  (created by the existing `handle_new_user` trigger), so attribution FKs are safe.
+- `private.is_solver()` helper (mirrors `private.is_staff()` from migration 0004): true when
+  the caller's `profiles.role = 'solver'`.
+- `private.is_admin()` does NOT exist yet — create it following the exact 0004 pattern
+  (SECURITY DEFINER, `search_path=''`, `revoke from public` + grant to `anon, authenticated`).
+  Reference everything schema-qualified (`private.is_admin()`). Note `private.is_staff()`
+  already returns true for BOTH `staff` and `admin`, so `descartado` staying staff/admin-only
+  needs no new check; `private.is_admin()` is only for `grant_solver` / `resolve_dispute`.
 
 ### Resolution lifecycle (reuses `report_status`)
 ```
@@ -79,10 +88,17 @@ descartado ← (staff/admin only, unchanged)
 - **Resolve**: `→ resuelto` REQUIRES ≥1 `resolution` proof media already attached and
   processed; sets `reports.resolved_by = auth.uid()`, `resolved_at = now()`.
 - Implemented by **extending `change_report_status`** (keep its DEFINER, `for update` lock,
-  no-op guard, `report_status_history` audit insert). New gate: allow `solver` for
-  `en_proceso`/`resuelto` transitions (capturing claimed_by/resolved_by); `descartado`
-  stays staff/admin-only; staff/admin retain all powers. The `→ resuelto` path raises
-  (e.g. `P0001`) if no processed proof media exists.
+  no-op guard, `report_status_history` audit insert). **Keep the EXACT current signature**
+  `change_report_status(p_report_id uuid, p_to_status report_status, p_note text default null)`
+  — attribution comes from `auth.uid()` inside the body, NOT new params — so the existing
+  `revoke from public, anon` + `grant to authenticated` and the pgTAP signature assertion
+  (`change_report_status_test.sql`) carry over unchanged (a `create or replace` with the
+  same signature preserves grants). New gate inside the body: allow `solver` for
+  `en_proceso`/`resuelto` transitions (capturing `claimed_by`/`resolved_by` from
+  `auth.uid()`); `descartado` stays `private.is_staff()`-only; staff/admin retain all powers.
+  The `→ resuelto` path raises (e.g. `P0001`) if no processed `kind='resolution'` media
+  exists. NOTE: the current function deliberately does NOT clear `resolved_at` on un-resolve
+  — the v2/`resolve_dispute` revert path must EXPLICITLY null `resolved_at` and `resolved_by`.
 
 ### Proof media (photos + videos)
 - Add **`kind`** to `public.report_media`: `text NOT NULL DEFAULT 'report' CHECK (kind IN ('report','resolution'))`.
@@ -121,9 +137,14 @@ descartado ← (staff/admin only, unchanged)
   `resolved_by uuid NULL REFERENCES profiles(id)`. (`resolved_at` already exists.)
 - `report_media` += `kind` (`report`|`resolution`), `uploaded_by uuid NULL`.
 - `report_disputes` (new).
-- RPCs: `grant_solver` (admin), extended `change_report_status` (solver transitions +
-  proof requirement), `resolve_dispute` (admin). All DEFINER, `revoke from public, anon`,
-  granted to the right roles by name (avoid the Supabase default-EXECUTE-to-anon trap).
+- RPCs: `grant_solver` (admin, DEFINER, `private.is_admin()`); `attach_resolution_media`
+  (solver, DEFINER — mints signed uploads + inserts `kind='resolution'` media on an EXISTING
+  report; distinct from `create_report` which creates a report+media atomically); extended
+  `change_report_status` (solver transitions + proof gate, SAME signature); `resolve_dispute`
+  (admin, DEFINER — nulls `resolved_at`/`resolved_by` on revert). All DEFINER functions
+  `revoke from public, anon` + grant to the right roles by name (the Supabase
+  default-EXECUTE-to-anon trap — the established pattern in every existing migration).
+  Helpers `private.is_admin()` / `private.is_solver()` created per the 0004 pattern.
 
 ### Authz / RLS / abuse
 - `solver` can ONLY claim/resolve (not `descartado`), and sets `claimed_by`/`resolved_by`
@@ -174,6 +195,20 @@ descartado ← (staff/admin only, unchanged)
 - **Unit/integration** (vitest): the resolution-media API, the solver gating in the status
   API, the solver profile read service, before/after rendering.
 - **Runtime** (agent-browser): SCEN-009 with a seeded verified solver on prod/preview.
+
+## Implementation chunks
+
+This subsystem is ~2–3 PRs of work; the implementation plan splits it into three ordered,
+independently-shippable chunks (each with its own holdout scenarios subset + rollback):
+- **B1 — Solver identity & grant infra**: `solver` enum value, `solver_profiles` (+ lower()
+  unique index), `private.is_solver()`/`private.is_admin()`, `grant_solver`, RLS, pgTAP. Seed
+  one verified solver. (No public behavior change yet.)
+- **B2 — Resolution lifecycle & attribution**: `reports.claimed_by/claimed_at/resolved_by`,
+  `report_media.kind`+`uploaded_by`, `change_report_status` v2 (claim/resolve + proof gate),
+  `attach_resolution_media`, resolution-media API, solver claim/resolve UI, before/after +
+  attribution on detail + map, `/solucionadores/[handle]`. (SCEN-001..006, 008, 009.)
+- **B3 — Disputes**: `report_disputes`, `resolve_dispute` (nulls resolved_at/by on revert),
+  dispute action + admin review in `/panel`. (SCEN-007.)
 
 ## Files / migrations / blast radius
 - **Migrations (new)**: enum `solver`; `solver_profiles`; `reports` columns; `report_media.kind`
