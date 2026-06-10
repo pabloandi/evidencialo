@@ -121,7 +121,13 @@ function AttributionBadge({
         />
       )}
       <span className="solver-attribution__text">
-        {verb} <span className="solver-attribution__handle">@{attribution.handle}</span>
+        {verb}{" "}
+        <Link
+          href={`/solucionadores/${attribution.handle}`}
+          className="solver-attribution__handle"
+        >
+          @{attribution.handle}
+        </Link>
       </span>
       <span className="solver-attribution__chip">
         ✓ {attribution.typeLabel}
