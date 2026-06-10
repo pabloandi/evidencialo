@@ -121,10 +121,18 @@ select is(
   'B1.3: no orphan solver_profiles row is created for the missing-profile grant');
 
 -- ---------------------------------------------------------------------------
--- solver_profiles RLS: public can SELECT; a client (citizen/anon) CANNOT
--- write directly — inserts/updates only flow through the DEFINER RPC / service
--- role. A direct insert is blocked by the absence of any insert policy (no
--- permissive policy → WITH CHECK fails: 42501).
+-- solver_profiles RLS: public can SELECT; a client (citizen/anon) CANNOT write
+-- directly — inserts/updates only flow through the DEFINER RPC / service role.
+-- This project protects tables with RLS (no permissive client write policy), not
+-- by revoking the default table grants — exactly like reports/report_media. The
+-- two client write paths therefore fail by DIFFERENT mechanisms, and each
+-- assertion below encodes the real one:
+--   INSERT → RLS WITH CHECK has no permissive policy → the row is REJECTED with
+--            SQLSTATE 42501 (message-agnostic: the wording is PG-version
+--            dependent, so we assert the code, not the text).
+--   UPDATE → no permissive UPDATE policy → the statement matches ZERO rows and
+--            mutates nothing. RLS row-filtering does NOT raise; the faithful
+--            check is "the row is unchanged", not a thrown error.
 -- ---------------------------------------------------------------------------
 set local role authenticated;
 select set_config('request.jwt.claims',
@@ -133,14 +141,19 @@ select set_config('request.jwt.claims',
 select throws_ok(
   $$ insert into public.solver_profiles (id, handle, type)
      values ('11111111-1111-1111-1111-111111111111', 'self-grant', 'influencer') $$,
-  '42501',
+  '42501', null,
   'RLS: a citizen cannot INSERT into solver_profiles directly (no client write path)');
 
-select throws_ok(
-  $$ update public.solver_profiles set handle = 'hijacked'
-     where id = '22222222-2222-2222-2222-222222222222' $$,
-  '42501',
-  'RLS: a citizen cannot UPDATE solver_profiles directly (no client write path)');
+-- The citizen UPDATE is a silent no-op under RLS (0 rows, no raise); prove the
+-- row is intact afterward — the mechanism-correct encoding of "cannot update".
+update public.solver_profiles set handle = 'hijacked'
+  where id = '22222222-2222-2222-2222-222222222222';
+
+select is(
+  (select handle from public.solver_profiles
+   where id = '22222222-2222-2222-2222-222222222222'),
+  'Alcaldia-Cali',
+  'RLS: a citizen UPDATE on solver_profiles changes nothing (no client write path)');
 
 -- public read of the verified solver profile (the public identity surface).
 select is(
@@ -158,7 +171,7 @@ reset role;
 select throws_ok(
   $$ insert into public.solver_profiles (id, handle, type)
      values ('11111111-1111-1111-1111-111111111111', 'alcaldia-cali', 'government') $$,
-  '23505',
+  '23505', null,
   'lower(handle) uniqueness: a case-different duplicate handle is rejected (23505)');
 
 -- ---------------------------------------------------------------------------
