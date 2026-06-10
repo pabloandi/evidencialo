@@ -1,6 +1,7 @@
-import { getSessionRole, isStaff } from "@/lib/services/authz";
+import { getSessionRole, isSolver, isStaff } from "@/lib/services/authz";
 import {
   ForbiddenError,
+  ProofRequiredError,
   ReportNotFoundError,
   changeReportStatus,
 } from "@/lib/services/statusService";
@@ -12,14 +13,18 @@ import { validateStatusInput } from "@/lib/validation/statusSchema";
  *
  * TWO authz layers: this route's `getSessionRole` 403 (a citizen/anonymous
  * caller never triggers any work — SCEN-001/002) AND the RPC's
- * `private.is_staff()` guard (the DB is the real boundary — SCEN-007). No
- * anti-spam gates: this is an authenticated INTERNAL write, not the public POST.
+ * `private.is_staff()` / `private.is_solver()` guard (the DB is the real
+ * boundary — SCEN-007, solver SCEN-004). Staff AND verified solvers pass the
+ * route gate; the RPC independently re-checks the role and restricts a solver to
+ * en_proceso/resuelto. No anti-spam gates: this is an authenticated INTERNAL
+ * write, not the public POST.
  *
  * Order: validate the route param (uuid -> else 400) and authorize FIRST, then
  * parse + validate the body (invalid status -> 400, SCEN-005), then call the
  * service and map its typed errors (ForbiddenError -> 403, ReportNotFoundError
- * -> 404, else 500). Node.js runtime (the supabase-js client is not
- * Edge-compatible); do NOT add `export const runtime = "edge"`.
+ * -> 404, ProofRequiredError -> 422 (solver SCEN-003), else 500). Node.js
+ * runtime (the supabase-js client is not Edge-compatible); do NOT add
+ * `export const runtime = "edge"`.
  */
 
 const UUID_RE =
@@ -47,7 +52,7 @@ export async function POST(
   } catch (error) {
     console.error("session resolution failed; treating as anonymous", { error });
   }
-  if (!isStaff(role)) {
+  if (!(isStaff(role) || isSolver(role))) {
     return Response.json(
       {
         error: {
@@ -97,6 +102,18 @@ export async function POST(
       return Response.json(
         { error: { code: "not_found", message: "Reporte no encontrado." } },
         { status: 404 },
+      );
+    }
+    if (error instanceof ProofRequiredError) {
+      return Response.json(
+        {
+          error: {
+            code: "proof_required",
+            message:
+              "Debes adjuntar evidencia (foto/video) procesada antes de marcar el reporte como resuelto.",
+          },
+        },
+        { status: 422 },
       );
     }
 

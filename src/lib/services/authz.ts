@@ -6,12 +6,13 @@ import { createServerSupabase } from "@/lib/supabase/server";
 // a per-request DB round trip; when the hook is not yet enabled on a project we
 // fall back to a live `profiles` read so the panel still gates correctly.
 
-export type AppRole = "citizen" | "staff" | "admin";
+export type AppRole = "citizen" | "staff" | "admin" | "solver";
 
 const KNOWN_ROLES: ReadonlySet<string> = new Set<AppRole>([
   "citizen",
   "staff",
   "admin",
+  "solver",
 ]);
 
 /** Narrow an untrusted value to a known role, or null if unrecognized. */
@@ -38,6 +39,11 @@ export function roleFromClaims(
 /** Staff-level role (municipal staff or admin). */
 export function isStaff(role: AppRole | null): boolean {
   return role === "staff" || role === "admin";
+}
+
+/** Verified solver role (claims/resolves reports with public proof). */
+export function isSolver(role: AppRole | null): boolean {
+  return role === "solver";
 }
 
 /** Whether a role may access the management panel `(panel)`. */

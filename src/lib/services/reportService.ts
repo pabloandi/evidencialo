@@ -54,7 +54,7 @@ const MIME_EXT: Record<string, string> = {
   "video/mp4": "mp4",
 };
 
-function extForMime(mime: string): string {
+export function extForMime(mime: string): string {
   return MIME_EXT[mime] ?? "bin";
 }
 
@@ -62,8 +62,12 @@ function extForMime(mime: string): string {
  * Deterministic per-report storage path so a retry addresses the same object.
  * The report id is not known until insert, so the path uses a stable prefix the
  * RPC echoes back; here we build the per-index suffix from the mime type.
+ *
+ * Exported so the resolution-media path (B2.2a) reuses the EXACT same suffix
+ * scheme — proof objects land at `<report_id>/resolution/<index>.<ext>` while
+ * complaint media lands at `<report_id>/<index>.<ext>`.
  */
-function mediaPathSuffix(index: number, item: ValidMediaInput): string {
+export function mediaPathSuffix(index: number, item: ValidMediaInput): string {
   return `${index}.${extForMime(item.mime)}`;
 }
 

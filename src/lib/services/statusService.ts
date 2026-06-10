@@ -17,7 +17,13 @@ import { createServerSupabase } from "@/lib/supabase/server";
  * `mediaService.ts`):
  *   - 42501 (forbidden)        -> ForbiddenError       -> route 403
  *   - P0002 (report not found) -> ReportNotFoundError  -> route 404
+ *   - P0001 (proof required)   -> ProofRequiredError   -> route 422
  *   - anything else            -> generic Error        -> route 500
+ *
+ * P0001 is Postgres' generic raise_exception code. `change_report_status` only
+ * raises it for the resolution proof gate (resolve without processed proof), so
+ * the code check is authoritative; the `/proof/i` message guard is belt-and-
+ * suspenders in case a layer rewrites the code.
  */
 
 /** The caller is not staff/admin (DB-layer authz refused). Route -> 403. */
@@ -33,6 +39,17 @@ export class ReportNotFoundError extends Error {
   constructor(public readonly reportId: string) {
     super(`report not found: ${reportId}`);
     this.name = "ReportNotFoundError";
+  }
+}
+
+/**
+ * Resolve attempted without processed proof media (DB-layer proof gate refused).
+ * Route -> 422.
+ */
+export class ProofRequiredError extends Error {
+  constructor(message = "resolution proof required") {
+    super(message);
+    this.name = "ProofRequiredError";
   }
 }
 
@@ -75,6 +92,9 @@ export async function changeReportStatus(
     }
     if (code === "P0002" || /not found/i.test(message)) {
       throw new ReportNotFoundError(reportId);
+    }
+    if (code === "P0001" || /proof/i.test(message)) {
+      throw new ProofRequiredError(message || "resolution proof required");
     }
     throw new Error(`change_report_status failed: ${message || code}`);
   }

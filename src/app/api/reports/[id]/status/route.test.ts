@@ -36,7 +36,10 @@ vi.mock("@/lib/services/statusService", async () => {
   };
 });
 
-import { ReportNotFoundError } from "@/lib/services/statusService";
+import {
+  ProofRequiredError,
+  ReportNotFoundError,
+} from "@/lib/services/statusService";
 import { POST } from "./route";
 
 const VALID_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -183,6 +186,51 @@ describe("POST /api/reports/[id]/status", () => {
       "en_proceso",
       null,
     );
+  });
+
+  it("lets a solver claim (en_proceso) through the route gate to the service (B2.2b SCEN-001)", async () => {
+    getSessionRoleMock.mockResolvedValue({ userId: "solver-1", role: "solver" });
+    changeReportStatusMock.mockResolvedValue({
+      id: VALID_ID,
+      status: "en_proceso",
+      resolved_at: null,
+    });
+    const { request, ctx } = makeRequest(VALID_ID, { status: "en_proceso" });
+
+    const res = await POST(request, ctx);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("en_proceso");
+    expect(changeReportStatusMock).toHaveBeenCalledWith(
+      VALID_ID,
+      "en_proceso",
+      null,
+    );
+  });
+
+  it("returns 422 when a solver resolves without proof (ProofRequiredError -> proof_required, B2.2b SCEN-003)", async () => {
+    getSessionRoleMock.mockResolvedValue({ userId: "solver-1", role: "solver" });
+    changeReportStatusMock.mockRejectedValue(new ProofRequiredError());
+    const { request, ctx } = makeRequest(VALID_ID, { status: "resuelto" });
+
+    const res = await POST(request, ctx);
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("proof_required");
+  });
+
+  it("still returns 403 for a citizen under the staff-OR-solver gate (B2.2b SCEN-004)", async () => {
+    getSessionRoleMock.mockResolvedValue({ userId: "u-1", role: "citizen" });
+    const { request, ctx } = makeRequest(VALID_ID, { status: "en_proceso" });
+
+    const res = await POST(request, ctx);
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("forbidden");
+    expect(changeReportStatusMock).not.toHaveBeenCalled();
   });
 
   it("returns 500 for an unexpected service failure", async () => {

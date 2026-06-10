@@ -77,6 +77,126 @@ function fail(error: ValidationError): ValidationResult {
   return { ok: false, error };
 }
 
+/** Result of validating a bare media array (resolution-proof path, B2.2a). */
+export type MediaValidationResult =
+  | { ok: true; value: ValidMediaInput[] }
+  | { ok: false; error: ValidationError };
+
+const mediaArraySchema = z.array(mediaItemSchema);
+
+/**
+ * Validate a bare media array against the SAME structural + business rules as a
+ * report's media (count/mime/size/duration limits), reused by the
+ * resolution-proof attach path (`POST /api/reports/[id]/resolution-media`).
+ *
+ * The proof payload is `{ media: [...] }`, so the route passes `raw.media`
+ * here. Sharing the rules with `validateReportInput` keeps the two media paths
+ * in lock-step — a format/size cap can never drift between complaint and proof
+ * media. Returns the FIRST violation with the scenario's Spanish message.
+ */
+export function validateMediaInput(raw: unknown): MediaValidationResult {
+  const parsed = mediaArraySchema.safeParse(raw);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const field = first?.path.length
+      ? `media.${first.path.join(".")}`
+      : "media";
+    return {
+      ok: false,
+      error: {
+        code: "invalid_payload",
+        message: "Cuerpo de la petición inválido.",
+        field,
+      },
+    };
+  }
+
+  const check = validateMediaItems(parsed.data);
+  if (check) {
+    return { ok: false, error: check };
+  }
+  return { ok: true, value: parsed.data };
+}
+
+/**
+ * Shared media business-rule checks (count, mime, size, duration), in the fixed
+ * order the scenarios pin. Returns the FIRST violation, or null if all pass.
+ */
+function validateMediaItems(media: ValidMediaInput[]): ValidationError | null {
+  if (media.length === 0) {
+    return {
+      code: "media_required",
+      message: "Adjunta al menos una foto o video.",
+      field: "media",
+    };
+  }
+
+  const imageCount = media.filter((m) => m.type === "image").length;
+  const videoCount = media.filter((m) => m.type === "video").length;
+
+  if (imageCount > MAX_IMAGES) {
+    return {
+      code: "too_many_images",
+      message: "Máximo 3 imágenes por reporte.",
+      field: "media",
+    };
+  }
+  if (videoCount > MAX_VIDEOS) {
+    return {
+      code: "too_many_videos",
+      message: "Máximo 1 video por reporte.",
+      field: "media",
+    };
+  }
+
+  for (let i = 0; i < media.length; i++) {
+    const item = media[i];
+    if (item.type === "image") {
+      if (!IMAGE_MIMES.has(item.mime)) {
+        return {
+          code: "media_format_invalid",
+          message: "Formato de imagen no permitido. Usa JPEG, PNG o WebP.",
+          field: `media.${i}.mime`,
+        };
+      }
+      if (item.size > MAX_IMAGE_BYTES) {
+        return {
+          code: "media_too_large",
+          message: "La imagen supera el tamaño máximo de 10 MB.",
+          field: `media.${i}.size`,
+        };
+      }
+    } else {
+      if (item.mime !== VIDEO_MIME) {
+        return {
+          code: "media_format_invalid",
+          message: "Formato de video no permitido. Usa MP4.",
+          field: `media.${i}.mime`,
+        };
+      }
+      if (item.size > MAX_VIDEO_BYTES) {
+        return {
+          code: "media_too_large",
+          message: "El video supera el tamaño máximo de 50 MB.",
+          field: `media.${i}.size`,
+        };
+      }
+      if (
+        item.duration_s !== undefined &&
+        item.duration_s > MAX_VIDEO_DURATION_S
+      ) {
+        return {
+          code: "video_too_long",
+          message: "El video supera la duración máxima de 60 segundos.",
+          field: `media.${i}.duration_s`,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 export function validateReportInput(raw: unknown): ValidationResult {
   // Structural parse: not an object / missing fields / wrong types -> 422.
   const parsed = reportSchema.safeParse(raw);
@@ -129,77 +249,11 @@ export function validateReportInput(raw: unknown): ValidationResult {
     });
   }
 
-  // media: at least one item.
-  if (value.media.length === 0) {
-    return fail({
-      code: "media_required",
-      message: "Adjunta al menos una foto o video.",
-      field: "media",
-    });
-  }
-
-  const imageCount = value.media.filter((m) => m.type === "image").length;
-  const videoCount = value.media.filter((m) => m.type === "video").length;
-
-  if (imageCount > MAX_IMAGES) {
-    return fail({
-      code: "too_many_images",
-      message: "Máximo 3 imágenes por reporte.",
-      field: "media",
-    });
-  }
-  if (videoCount > MAX_VIDEOS) {
-    return fail({
-      code: "too_many_videos",
-      message: "Máximo 1 video por reporte.",
-      field: "media",
-    });
-  }
-
-  // Per-item checks, in index order. mime first, then size, then duration.
-  for (let i = 0; i < value.media.length; i++) {
-    const item = value.media[i];
-    if (item.type === "image") {
-      if (!IMAGE_MIMES.has(item.mime)) {
-        return fail({
-          code: "media_format_invalid",
-          message: "Formato de imagen no permitido. Usa JPEG, PNG o WebP.",
-          field: `media.${i}.mime`,
-        });
-      }
-      if (item.size > MAX_IMAGE_BYTES) {
-        return fail({
-          code: "media_too_large",
-          message: "La imagen supera el tamaño máximo de 10 MB.",
-          field: `media.${i}.size`,
-        });
-      }
-    } else {
-      if (item.mime !== VIDEO_MIME) {
-        return fail({
-          code: "media_format_invalid",
-          message: "Formato de video no permitido. Usa MP4.",
-          field: `media.${i}.mime`,
-        });
-      }
-      if (item.size > MAX_VIDEO_BYTES) {
-        return fail({
-          code: "media_too_large",
-          message: "El video supera el tamaño máximo de 50 MB.",
-          field: `media.${i}.size`,
-        });
-      }
-      if (
-        item.duration_s !== undefined &&
-        item.duration_s > MAX_VIDEO_DURATION_S
-      ) {
-        return fail({
-          code: "video_too_long",
-          message: "El video supera la duración máxima de 60 segundos.",
-          field: `media.${i}.duration_s`,
-        });
-      }
-    }
+  // media: count/mime/size/duration limits (shared with the resolution-proof
+  // path so the two media validators never drift). First violation -> fail.
+  const mediaError = validateMediaItems(value.media);
+  if (mediaError) {
+    return fail(mediaError);
   }
 
   return { ok: true, value };
