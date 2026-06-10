@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/reportLabels";
+import {
+  CATEGORY_LABELS,
+  SOLVER_TYPE_LABELS,
+  STATUS_LABELS,
+} from "@/lib/reportLabels";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 
 /**
@@ -39,6 +43,22 @@ export type ReportDetailMedia = {
   type: string;
   width: number | null;
   height: number | null;
+  /** 'report' (original complaint) | 'resolution' (proof of fix). The UI splits
+   * before/after on this field; the array order is unchanged. */
+  kind: string;
+};
+
+/**
+ * The PUBLIC identity of the verified solver who claimed/resolved a report.
+ * Only present when the attributing profile has a `solver_profiles` row — a
+ * staff resolution (profile with no public solver identity) yields `null`,
+ * which is correct (no public badge), not an error.
+ */
+export type SolverAttribution = {
+  handle: string;
+  type: string;
+  typeLabel: string;
+  avatarUrl: string | null;
 };
 
 export type ReportDetail = {
@@ -50,6 +70,12 @@ export type ReportDetail = {
   createdAt: string;
   description: string | null;
   media: ReportDetailMedia[];
+  /** The solver who claimed (→ en_proceso), if any and if they have a public
+   * solver profile. `null` for unclaimed or staff-claimed reports. */
+  claimedBy: SolverAttribution | null;
+  /** The solver who resolved (→ resuelto), if any and if they have a public
+   * solver profile. `null` for unresolved or staff-resolved reports. */
+  resolvedBy: SolverAttribution | null;
 };
 
 /** Row shape from the reports + category lookup (public columns only). */
@@ -59,6 +85,10 @@ type ReportRow = {
   created_at: string;
   description: string | null;
   categories: { slug: string } | null;
+  // Attribution FKs to profiles(id) (NOT solver_profiles); the public
+  // handle/type are fetched separately below.
+  claimed_by: string | null;
+  resolved_by: string | null;
 };
 
 /** Row shape from the processed-media lookup. */
@@ -67,6 +97,15 @@ type MediaRow = {
   type: string;
   width: number | null;
   height: number | null;
+  kind: string;
+};
+
+/** Row shape from the public solver_profiles lookup (public columns only). */
+type SolverProfileRow = {
+  id: string;
+  handle: string;
+  type: string;
+  avatar_url: string | null;
 };
 
 /**
@@ -88,7 +127,9 @@ export async function getPublicReportDetail(
   // Public columns only — `reporter_id` and `location` are intentionally absent.
   const { data: report, error: reportErr } = await client
     .from("reports")
-    .select("id, status, created_at, description, categories(slug)")
+    .select(
+      "id, status, created_at, description, claimed_by, resolved_by, categories(slug)",
+    )
     .eq("id", id)
     .eq("is_visible", true)
     .maybeSingle<ReportRow>();
@@ -101,7 +142,7 @@ export async function getPublicReportDetail(
 
   const { data: mediaRows, error: mediaErr } = await client
     .from("report_media")
-    .select("storage_path, type, width, height")
+    .select("storage_path, type, width, height, kind")
     .eq("report_id", id)
     .eq("processing_state", "processed")
     .order("created_at", { ascending: true })
@@ -125,11 +166,52 @@ export async function getPublicReportDetail(
         type: row.type,
         width: row.width,
         height: row.height,
+        kind: row.kind,
       };
     }),
   );
 
   const media = signed.filter((m): m is ReportDetailMedia => m !== null);
+
+  // Solver attribution. claimed_by/resolved_by FK profiles(id), NOT
+  // solver_profiles, so a PostgREST embed is impossible (and a staff member has
+  // a profile but no solver_profiles row). One extra admin read fetches the
+  // PUBLIC solver identity for the non-null ids; staff (no solver row) → null.
+  const attribIds = [report.claimed_by, report.resolved_by].filter(
+    (v): v is string => v !== null,
+  );
+
+  let solverById = new Map<string, SolverAttribution>();
+  if (attribIds.length > 0) {
+    const { data: profiles, error: profilesErr } = await client
+      .from("solver_profiles")
+      .select("id, handle, type, avatar_url")
+      .in("id", attribIds)
+      .returns<SolverProfileRow[]>();
+
+    if (profilesErr) {
+      throw new Error(`solver profile lookup failed: ${profilesErr.message}`);
+    }
+
+    solverById = new Map(
+      (profiles ?? []).map((p) => [
+        p.id,
+        {
+          handle: p.handle,
+          type: p.type,
+          typeLabel: SOLVER_TYPE_LABELS[p.type] ?? p.type,
+          avatarUrl: p.avatar_url,
+        },
+      ]),
+    );
+  }
+
+  const claimedBy = report.claimed_by
+    ? solverById.get(report.claimed_by) ?? null
+    : null;
+  const resolvedBy = report.resolved_by
+    ? solverById.get(report.resolved_by) ?? null
+    : null;
 
   const category = report.categories?.slug ?? "";
   const status = report.status;
@@ -143,5 +225,7 @@ export async function getPublicReportDetail(
     createdAt: report.created_at,
     description: report.description,
     media,
+    claimedBy,
+    resolvedBy,
   };
 }

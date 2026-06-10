@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { CategoryInvalidError, createReport } from "./reportService";
+import { CategoryInvalidError, createReport, listInBbox } from "./reportService";
+import type { Bbox } from "@/lib/geo";
 import type { ValidReportInput } from "@/lib/validation/reportSchema";
 
 // Observable contract for reportService (step05, hardened) with a MOCKED admin
@@ -208,5 +209,128 @@ describe("createReport", () => {
     expect(typeof createReport).toBe("function");
     expect(createReport.length).toBeGreaterThanOrEqual(1);
     vi.clearAllMocks();
+  });
+});
+
+// Observable contract for listInBbox (the public-map read). The `reports_in_view`
+// RPC is mocked so the unit under test is the snake_case → camelCase mapping of
+// the B2.3 attribution columns and the cap+1 truncation sentinel — not PostGIS.
+describe("listInBbox", () => {
+  const BBOX: Bbox = { minLng: -74.1, minLat: 4.6, maxLng: -74.06, maxLat: 4.62 };
+
+  type RpcRow = Record<string, unknown>;
+
+  /** Fake client whose `reports_in_view` RPC returns the given rows verbatim. */
+  function makeReadClient(rows: RpcRow[]) {
+    const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+    const client = {
+      async rpc(fn: string, args: Record<string, unknown>) {
+        rpcCalls.push({ fn, args });
+        return { data: rows, error: null };
+      },
+      __inspect: { rpcCalls },
+    };
+    return client as unknown as Parameters<typeof listInBbox>[1] & {
+      __inspect: { rpcCalls: typeof rpcCalls };
+    };
+  }
+
+  function attributedRow(over: RpcRow = {}): RpcRow {
+    return {
+      id: "rep-A",
+      lng: -74.08,
+      lat: 4.61,
+      category: "bache",
+      status: "en_proceso",
+      created_at: "2026-06-03T00:00:00Z",
+      claimed_by_handle: "alcaldia",
+      claimed_by_type: "government",
+      resolved_by_handle: null,
+      resolved_by_type: null,
+      ...over,
+    };
+  }
+
+  it("maps the snake_case attribution columns onto the camelCase ReportMarker (SCEN-001)", async () => {
+    const client = makeReadClient([
+      attributedRow({
+        resolved_by_handle: "fundacion",
+        resolved_by_type: "org",
+      }),
+    ]);
+
+    const { markers, truncated } = await listInBbox(BBOX, client);
+
+    expect(truncated).toBe(false);
+    expect(markers).toHaveLength(1);
+    const m = markers[0];
+    // Public fields pass through unchanged.
+    expect(m.id).toBe("rep-A");
+    expect(m.category).toBe("bache");
+    expect(m.status).toBe("en_proceso");
+    // Attribution columns renamed snake_case → camelCase.
+    expect(m.claimedByHandle).toBe("alcaldia");
+    expect(m.claimedByType).toBe("government");
+    expect(m.resolvedByHandle).toBe("fundacion");
+    expect(m.resolvedByType).toBe("org");
+    // The DB column names never leak onto the marker.
+    expect(m).not.toHaveProperty("claimed_by_handle");
+    expect(m).not.toHaveProperty("resolved_by_type");
+    // cap+1 sentinel was requested.
+    expect(client.__inspect.rpcCalls[0].fn).toBe("reports_in_view");
+    expect(client.__inspect.rpcCalls[0].args.p_limit).toBe(2001);
+  });
+
+  it("carries null attribution through as null for an unattributed row", async () => {
+    const client = makeReadClient([
+      attributedRow({
+        claimed_by_handle: null,
+        claimed_by_type: null,
+        resolved_by_handle: null,
+        resolved_by_type: null,
+        status: "nuevo",
+      }),
+    ]);
+
+    const { markers } = await listInBbox(BBOX, client);
+
+    expect(markers[0].claimedByHandle).toBeNull();
+    expect(markers[0].claimedByType).toBeNull();
+    expect(markers[0].resolvedByHandle).toBeNull();
+    expect(markers[0].resolvedByType).toBeNull();
+  });
+
+  it("drops the cap+1 sentinel row and flags truncation, preserving the mapping", async () => {
+    // cap = 1 → request p_limit 2; two rows back means truncation.
+    const client = makeReadClient([
+      attributedRow({ id: "rep-newest" }),
+      attributedRow({ id: "rep-sentinel", claimed_by_handle: "otro" }),
+    ]);
+
+    const { markers, truncated } = await listInBbox(BBOX, client, 1);
+
+    expect(truncated).toBe(true);
+    expect(markers).toHaveLength(1);
+    expect(markers[0].id).toBe("rep-newest");
+    expect(markers[0].claimedByHandle).toBe("alcaldia");
+  });
+
+  it("does not flag truncation when rows fit within the cap", async () => {
+    const client = makeReadClient([attributedRow()]);
+    const { markers, truncated } = await listInBbox(BBOX, client, 5);
+    expect(truncated).toBe(false);
+    expect(markers).toHaveLength(1);
+  });
+
+  it("throws a wrapped error when the RPC fails", async () => {
+    const failing = {
+      async rpc() {
+        return { data: null, error: { message: "GIST index missing" } };
+      },
+    } as unknown as Parameters<typeof listInBbox>[1];
+
+    await expect(listInBbox(BBOX, failing)).rejects.toThrow(
+      /reports_in_view RPC failed/,
+    );
   });
 });

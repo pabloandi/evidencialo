@@ -19,6 +19,8 @@ type ReportRow = {
   created_at: string;
   description: string | null;
   categories: { slug: string } | null;
+  claimed_by?: string | null;
+  resolved_by?: string | null;
 } | null;
 
 type MediaRow = {
@@ -28,6 +30,14 @@ type MediaRow = {
   height: number | null;
   processing_state: string;
   created_at: string;
+  kind?: string;
+};
+
+type SolverProfileRow = {
+  id: string;
+  handle: string;
+  type: string;
+  avatar_url: string | null;
 };
 
 /**
@@ -41,11 +51,13 @@ type MediaRow = {
 function makeFakeClient(behavior: {
   reportRow?: ReportRow;
   mediaRows?: MediaRow[];
+  solverProfiles?: SolverProfileRow[];
   signError?: (path: string) => boolean;
 }) {
   const signedCalls: Array<{ path: string; ttl: number }> = [];
   const reportEqs: Array<[string, unknown]> = [];
   const mediaEqs: Array<[string, unknown]> = [];
+  const solverInIds: string[][] = [];
 
   const client = {
     from(table: string) {
@@ -58,8 +70,18 @@ function makeFakeClient(behavior: {
                 return builder;
               },
               async maybeSingle() {
+                const row = behavior.reportRow ?? null;
                 return {
-                  data: behavior.reportRow ?? null,
+                  // Mirror PostgREST: a selected-but-unset uuid column comes back
+                  // as null, never undefined — normalize so the service's
+                  // null-checks behave as they would against the real DB.
+                  data: row
+                    ? {
+                        claimed_by: null,
+                        resolved_by: null,
+                        ...row,
+                      }
+                    : null,
                   error: null,
                 };
               },
@@ -83,14 +105,43 @@ function makeFakeClient(behavior: {
                 return builder;
               },
               // The service awaits the builder after `.returns()`; make it a
-              // thenable that resolves to the processed media rows.
+              // thenable that resolves to the processed media rows. `kind`
+              // defaults to 'report' to mirror the DB column default.
               then(
                 resolve: (v: {
                   data: MediaRow[];
                   error: null;
                 }) => void,
               ) {
-                resolve({ data: behavior.mediaRows ?? [], error: null });
+                const rows = (behavior.mediaRows ?? []).map((r) => ({
+                  kind: "report",
+                  ...r,
+                }));
+                resolve({ data: rows, error: null });
+              },
+            };
+            return builder;
+          },
+        };
+      }
+      if (table === "solver_profiles") {
+        return {
+          select: () => {
+            const builder = {
+              in(_col: string, ids: string[]) {
+                solverInIds.push(ids);
+                return builder;
+              },
+              returns() {
+                return builder;
+              },
+              then(
+                resolve: (v: {
+                  data: SolverProfileRow[];
+                  error: null;
+                }) => void,
+              ) {
+                resolve({ data: behavior.solverProfiles ?? [], error: null });
               },
             };
             return builder;
@@ -116,7 +167,7 @@ function makeFakeClient(behavior: {
         };
       },
     },
-    __inspect: { signedCalls, reportEqs, mediaEqs },
+    __inspect: { signedCalls, reportEqs, mediaEqs, solverInIds },
   };
 
   return client as unknown as Parameters<typeof getPublicReportDetail>[1] & {
@@ -124,6 +175,7 @@ function makeFakeClient(behavior: {
       signedCalls: Array<{ path: string; ttl: number }>;
       reportEqs: Array<[string, unknown]>;
       mediaEqs: Array<[string, unknown]>;
+      solverInIds: string[][];
     };
   };
 }
@@ -310,5 +362,167 @@ describe("getPublicReportDetail", () => {
 
     expect(detail!.categoryLabel).toBe("ruido");
     expect(detail!.statusLabel).toBe("archivado");
+  });
+
+  it("a plain `nuevo` report has no solver attribution and report-kind media (back-compat)", async () => {
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "nuevo",
+        created_at: "2026-05-01T10:00:00Z",
+        description: "Bache nuevo.",
+        categories: { slug: "bache" },
+      },
+      mediaRows: [
+        {
+          storage_path: `${VISIBLE_ID}/0.jpg`,
+          type: "image",
+          width: 800,
+          height: 600,
+          processing_state: "processed",
+          created_at: "2026-05-01T10:00:00Z",
+          // kind omitted → defaults to 'report' in the fake (DB column default).
+        },
+      ],
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client);
+
+    expect(detail!.claimedBy).toBeNull();
+    expect(detail!.resolvedBy).toBeNull();
+    expect(detail!.media).toHaveLength(1);
+    expect(detail!.media[0].kind).toBe("report");
+    // No attribution ids → the solver_profiles query is NEVER issued.
+    expect(client.__inspect.solverInIds).toHaveLength(0);
+  });
+
+  it("a report claimed (en_proceso) by a solver sets claimedBy, leaves resolvedBy null (SCEN-001)", async () => {
+    const SOLVER_ID = "22222222-2222-2222-2222-222222222222";
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "en_proceso",
+        created_at: "2026-05-01T10:00:00Z",
+        description: "Reclamado.",
+        categories: { slug: "bache" },
+        claimed_by: SOLVER_ID,
+        resolved_by: null,
+      },
+      mediaRows: [],
+      solverProfiles: [
+        {
+          id: SOLVER_ID,
+          handle: "alcaldia",
+          type: "government",
+          avatar_url: "https://cdn.example/a.png",
+        },
+      ],
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client);
+
+    expect(detail!.resolvedBy).toBeNull();
+    expect(detail!.claimedBy).toEqual({
+      handle: "alcaldia",
+      type: "government",
+      typeLabel: "Gobierno",
+      avatarUrl: "https://cdn.example/a.png",
+    });
+    // The attribution query was issued ONCE with the claimed_by id.
+    expect(client.__inspect.solverInIds).toEqual([[SOLVER_ID]]);
+  });
+
+  it("a resolved report attributed to a solver exposes resolvedBy + before/after media carry kind (SCEN-001)", async () => {
+    const SOLVER_ID = "33333333-3333-3333-3333-333333333333";
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "resuelto",
+        created_at: "2026-05-01T10:00:00Z",
+        description: "Resuelto con prueba.",
+        categories: { slug: "bache" },
+        claimed_by: SOLVER_ID,
+        resolved_by: SOLVER_ID,
+      },
+      mediaRows: [
+        {
+          storage_path: `${VISIBLE_ID}/before.jpg`,
+          type: "image",
+          width: 800,
+          height: 600,
+          processing_state: "processed",
+          created_at: "2026-05-01T10:00:00Z",
+          kind: "report",
+        },
+        {
+          storage_path: `${VISIBLE_ID}/after.jpg`,
+          type: "image",
+          width: 800,
+          height: 600,
+          processing_state: "processed",
+          created_at: "2026-05-02T10:00:00Z",
+          kind: "resolution",
+        },
+      ],
+      solverProfiles: [
+        {
+          id: SOLVER_ID,
+          handle: "fixmycity",
+          type: "org",
+          avatar_url: null,
+        },
+      ],
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client);
+
+    expect(detail!.resolvedBy).toEqual({
+      handle: "fixmycity",
+      type: "org",
+      typeLabel: "Organización",
+      avatarUrl: null,
+    });
+    expect(detail!.claimedBy).toEqual(detail!.resolvedBy);
+
+    // The media array still mixes both kinds; the UI splits before/after on it.
+    expect(detail!.media).toHaveLength(2);
+    const kinds = detail!.media.map((m) => m.kind);
+    expect(kinds).toContain("report");
+    expect(kinds).toContain("resolution");
+  });
+
+  it("a report resolved by STAFF (no solver_profiles row) shows no badge, does not crash", async () => {
+    const STAFF_ID = "44444444-4444-4444-4444-444444444444";
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "resuelto",
+        created_at: "2026-05-01T10:00:00Z",
+        description: "Resuelto por staff.",
+        categories: { slug: "bache" },
+        claimed_by: null,
+        resolved_by: STAFF_ID,
+      },
+      mediaRows: [
+        {
+          storage_path: `${VISIBLE_ID}/after.jpg`,
+          type: "image",
+          width: null,
+          height: null,
+          processing_state: "processed",
+          created_at: "2026-05-02T10:00:00Z",
+          kind: "resolution",
+        },
+      ],
+      // Staff has a profiles row but NO solver_profiles row → empty result.
+      solverProfiles: [],
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client);
+
+    // The query WAS issued for the staff id, but no public solver identity exists.
+    expect(client.__inspect.solverInIds).toEqual([[STAFF_ID]]);
+    expect(detail!.resolvedBy).toBeNull();
+    expect(detail!.claimedBy).toBeNull();
   });
 });

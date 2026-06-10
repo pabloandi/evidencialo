@@ -269,6 +269,30 @@ body {
   color: color-mix(in srgb, var(--color-ink) 60%, transparent);
 }
 
+.map-popup__solver {
+  flex-basis: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--color-ink);
+}
+
+.map-popup__handle {
+  font-weight: 600;
+}
+
+.map-popup__solver-type {
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
 .map-popup__link {
   flex-basis: 100%;
   margin-top: 0.125rem;
@@ -354,6 +378,171 @@ body {
   font-size: 1rem;
   line-height: 1.6;
   color: color-mix(in srgb, var(--color-ink) 88%, transparent);
+}
+
+/* Antes/Después section heading — quiet eyebrow above each gallery. */
+.report-detail__media-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
+/* ---- Solver attribution badge (chunk B2.3) ------------------------------- */
+.solver-attribution {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.solver-attribution__avatar {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+
+.solver-attribution__text {
+  font-size: 0.9375rem;
+  color: color-mix(in srgb, var(--color-ink) 85%, transparent);
+}
+
+.solver-attribution__handle {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.solver-attribution__chip {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+/* ---- Solver control bar + proof upload (chunk B2.3) ---------------------- */
+.solver-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+.solver-controls__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+/* The primary action fills its line on phones (citizens are on phones). */
+.solver-controls__action {
+  flex: 1 1 auto;
+  min-width: 12rem;
+}
+
+.solver-controls__hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+}
+
+.solver-controls__error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c92a2a;
+}
+
+.solver-controls__done {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.solver-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--color-ink) 4%, transparent);
+}
+
+.solver-upload__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  cursor: pointer;
+}
+
+.solver-upload__label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.solver-upload__hint {
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+}
+
+.solver-upload__input {
+  font: inherit;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--color-ink) 80%, transparent);
+}
+
+.solver-upload__input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.solver-upload__previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.solver-upload__preview {
+  flex: 0 0 auto;
+}
+
+.solver-upload__thumb {
+  display: block;
+  width: 4.5rem;
+  height: 4.5rem;
+  object-fit: cover;
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+
+.solver-upload__error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c92a2a;
+}
+
+.solver-upload__submit {
+  align-self: flex-start;
+  padding: 0.6rem 1.1rem;
 }
 
 /* ---- Missing-key fallback (SCEN-F03) -------------------------------------- */

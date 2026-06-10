@@ -184,6 +184,12 @@ export async function createReport(
  * are NEVER exposed here — the shape is pinned to the `reports_in_view` RETURNS
  * TABLE columns (public-map-bbox.scenarios.md, SCEN-004). Coordinates are public
  * by nature of a map pin.
+ *
+ * The `*By*` attribution fields (subsystem B, B2.3) carry the public solver
+ * handle + type when a report was claimed/resolved BY A VERIFIED SOLVER. They are
+ * `null` when the report is unattributed OR was attributed to a non-solver actor
+ * (staff/admin) — the RPC's LEFT JOIN to `solver_profiles` yields NULL there. The
+ * map popup renders "Resuelto por @handle" / "En proceso por @handle" from these.
  */
 export type ReportMarker = {
   id: string;
@@ -192,6 +198,28 @@ export type ReportMarker = {
   category: string;
   status: string;
   created_at: string;
+  claimedByHandle: string | null;
+  claimedByType: string | null;
+  resolvedByHandle: string | null;
+  resolvedByType: string | null;
+};
+
+/**
+ * Raw row shape returned by the `reports_in_view` RPC. The public-field columns
+ * are already camelCase-compatible (`id`, `lng`, …, `created_at`), but the
+ * attribution columns are snake_case and must be mapped onto `ReportMarker`.
+ */
+type ReportInViewRow = {
+  id: string;
+  lng: number;
+  lat: number;
+  category: string;
+  status: string;
+  created_at: string;
+  claimed_by_handle: string | null;
+  claimed_by_type: string | null;
+  resolved_by_handle: string | null;
+  resolved_by_type: string | null;
 };
 
 /** Default cap on rows returned per bbox read (overridable per call/test). */
@@ -230,9 +258,26 @@ export async function listInBbox(
     throw new Error(`reports_in_view RPC failed: ${error.message}`);
   }
 
-  const rows = data ?? [];
+  const rows = (data ?? []) as ReportInViewRow[];
   const truncated = rows.length > cap;
-  const markers = (truncated ? rows.slice(0, cap) : rows) as ReportMarker[];
+  const kept = truncated ? rows.slice(0, cap) : rows;
+
+  // Map snake_case RPC columns onto the camelCase ReportMarker. The public
+  // fields pass through unchanged; the four attribution columns are renamed
+  // (claimed_by_handle → claimedByHandle, …) so the popup never has to know the
+  // DB column names.
+  const markers: ReportMarker[] = kept.map((row) => ({
+    id: row.id,
+    lng: row.lng,
+    lat: row.lat,
+    category: row.category,
+    status: row.status,
+    created_at: row.created_at,
+    claimedByHandle: row.claimed_by_handle ?? null,
+    claimedByType: row.claimed_by_type ?? null,
+    resolvedByHandle: row.resolved_by_handle ?? null,
+    resolvedByType: row.resolved_by_type ?? null,
+  }));
 
   return { markers, truncated };
 }

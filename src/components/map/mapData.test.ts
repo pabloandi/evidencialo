@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { ReportMarker } from "@/lib/services/reportService";
 
 import {
+  attributionHtml,
   boundsToBboxParam,
   categoryColor,
   CATEGORY_COLORS,
   CATEGORY_LABELS,
   circleColorExpression,
+  escapeHtml,
   formatRelativeDate,
   isTruncated,
+  popupHtml,
   reportsToFeatureCollection,
   STATUS_LABELS,
 } from "./mapData";
@@ -171,6 +174,10 @@ describe("reportsToFeatureCollection", () => {
     category: "bache",
     status: "nuevo",
     created_at: "2026-06-01T12:00:00.000Z",
+    claimedByHandle: null,
+    claimedByType: null,
+    resolvedByHandle: null,
+    resolvedByType: null,
   };
 
   it("emits one Point feature per marker with [lng, lat] coordinates", () => {
@@ -182,20 +189,164 @@ describe("reportsToFeatureCollection", () => {
     expect(f.geometry.coordinates).toEqual([-74.08, 4.61]);
   });
 
-  it("exposes exactly the public property set — and NO reporter_id", () => {
+  it("exposes exactly the public property set (incl. solver attribution) — and NO reporter_id", () => {
     const fc = reportsToFeatureCollection([marker]);
     const props = fc.features[0].properties as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(
-      ["category", "created_at", "id", "status"].sort(),
+      [
+        "category",
+        "claimedByHandle",
+        "claimedByType",
+        "created_at",
+        "id",
+        "resolvedByHandle",
+        "resolvedByType",
+        "status",
+      ].sort(),
     );
     expect(props).not.toHaveProperty("reporter_id");
     expect(props).not.toHaveProperty("address");
+  });
+
+  it("carries the solver attribution through to feature properties", () => {
+    const attributed: ReportMarker = {
+      ...marker,
+      status: "en_proceso",
+      claimedByHandle: "alcaldia",
+      claimedByType: "government",
+    };
+    const props = reportsToFeatureCollection([attributed]).features[0]
+      .properties as Record<string, unknown>;
+    expect(props.claimedByHandle).toBe("alcaldia");
+    expect(props.claimedByType).toBe("government");
+    expect(props.resolvedByHandle).toBeNull();
   });
 
   it("returns an empty FeatureCollection for an empty array", () => {
     const fc = reportsToFeatureCollection([]);
     expect(fc.type).toBe("FeatureCollection");
     expect(fc.features).toEqual([]);
+  });
+});
+
+describe("escapeHtml", () => {
+  it("neutralizes the HTML-significant characters", () => {
+    expect(escapeHtml(`"><img src=x onerror=alert(1)>`)).toBe(
+      "&quot;&gt;&lt;img src=x onerror=alert(1)&gt;",
+    );
+    expect(escapeHtml("a & b 'q'")).toBe("a &amp; b &#39;q&#39;");
+  });
+});
+
+describe("attributionHtml (SCEN-001)", () => {
+  const base = {
+    claimedByHandle: null,
+    claimedByType: null,
+    resolvedByHandle: null,
+    resolvedByType: null,
+  };
+
+  it("renders 'En proceso por @handle' + verified type chip when only claimed", () => {
+    const html = attributionHtml({
+      ...base,
+      claimedByHandle: "alcaldia",
+      claimedByType: "government",
+    });
+    expect(html).toContain("En proceso por");
+    expect(html).toContain("@alcaldia");
+    expect(html).toContain("✓ Gobierno");
+    expect(html).not.toContain("Resuelto por");
+  });
+
+  it("renders 'Resuelto por @handle' and PREFERS resolve over a present claim", () => {
+    const html = attributionHtml({
+      ...base,
+      claimedByHandle: "alcaldia",
+      claimedByType: "government",
+      resolvedByHandle: "fundacion",
+      resolvedByType: "org",
+    });
+    expect(html).toContain("Resuelto por");
+    expect(html).toContain("@fundacion");
+    expect(html).toContain("✓ Organización");
+    expect(html).not.toContain("En proceso por");
+    expect(html).not.toContain("@alcaldia");
+  });
+
+  it("falls back to the raw type slug for an unknown solver type", () => {
+    const html = attributionHtml({
+      ...base,
+      resolvedByHandle: "nuevo_actor",
+      resolvedByType: "cooperative",
+    });
+    expect(html).toContain("✓ cooperative");
+  });
+
+  it("omits the type chip entirely when no type is present", () => {
+    const html = attributionHtml({ ...base, claimedByHandle: "solo_handle" });
+    expect(html).toContain("@solo_handle");
+    expect(html).not.toContain("✓");
+  });
+
+  it("returns an empty string for an unattributed report", () => {
+    expect(attributionHtml(base)).toBe("");
+    expect(attributionHtml({})).toBe("");
+  });
+
+  it("HTML-escapes a crafted handle and type so the popup cannot be injected", () => {
+    const html = attributionHtml({
+      ...base,
+      resolvedByHandle: `x"><img src=y onerror=alert(1)>`,
+      resolvedByType: `<b>org</b>`,
+    });
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<b>");
+    expect(html).toContain("&lt;img");
+    expect(html).toContain("&lt;b&gt;org&lt;/b&gt;");
+  });
+});
+
+describe("popupHtml", () => {
+  const now = new Date("2026-06-04T12:00:00.000Z");
+  const baseProps = {
+    id: "rep-1",
+    category: "bache",
+    status: "nuevo",
+    created_at: "2026-06-04T08:00:00.000Z",
+    claimedByHandle: null,
+    claimedByType: null,
+    resolvedByHandle: null,
+    resolvedByType: null,
+  };
+
+  it("renders the category chip, status, date and detail link", () => {
+    const html = popupHtml(baseProps, now);
+    expect(html).toContain("Bache");
+    expect(html).toContain("Nuevo");
+    expect(html).toContain("hoy");
+    expect(html).toContain(`href="/reportes/rep-1"`);
+  });
+
+  it("includes the attribution line for a resolved+attributed marker", () => {
+    const html = popupHtml(
+      {
+        ...baseProps,
+        status: "resuelto",
+        resolvedByHandle: "alcaldia",
+        resolvedByType: "government",
+      },
+      now,
+    );
+    expect(html).toContain("Resuelto por");
+    expect(html).toContain("@alcaldia");
+    expect(html).toContain("✓ Gobierno");
+  });
+
+  it("shows NO attribution line for an unattributed marker", () => {
+    const html = popupHtml(baseProps, now);
+    expect(html).not.toContain("Resuelto por");
+    expect(html).not.toContain("En proceso por");
+    expect(html).not.toContain("map-popup__solver");
   });
 });
 

@@ -34,3 +34,10 @@ export const STATUS_LABELS: Record<string, string> = {
   resuelto: "Resuelto",
   descartado: "Descartado",
 };
+
+/** Verified-solver type chip labels (detail badge + map popup + profile page). */
+export const SOLVER_TYPE_LABELS: Record<string, string> = {
+  government: "Gobierno",
+  influencer: "Influencer",
+  org: "Organización",
+};

@@ -570,6 +570,36 @@ describe("GET /api/reports — public map bbox read (step11)", () => {
     });
   });
 
+  it("passes the solver attribution fields through to the marker JSON (B2.3/SCEN-001)", async () => {
+    listInBboxMock.mockResolvedValue({
+      markers: [
+        {
+          id: "rep-A",
+          lng: -74.08,
+          lat: 4.61,
+          category: "bache",
+          status: "resuelto",
+          created_at: "2026-06-03T00:00:00Z",
+          claimedByHandle: "alcaldia",
+          claimedByType: "government",
+          resolvedByHandle: "fundacion",
+          resolvedByType: "org",
+        },
+      ],
+      truncated: false,
+    });
+
+    const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body[0].claimedByHandle).toBe("alcaldia");
+    expect(body[0].claimedByType).toBe("government");
+    expect(body[0].resolvedByHandle).toBe("fundacion");
+    expect(body[0].resolvedByType).toBe("org");
+    // Still no PII leaks alongside the attribution.
+    expect(body[0]).not.toHaveProperty("reporter_id");
+  });
+
   it("returns an empty array when no visible reports are in the box", async () => {
     listInBboxMock.mockResolvedValue({ markers: [], truncated: false });
     const res = await GET(getRequest("?bbox=-74.10,4.60,-74.06,4.62"));

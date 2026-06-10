@@ -27,49 +27,17 @@ import type { ReportMarker } from "@/lib/services/reportService";
 
 import {
   boundsToBboxParam,
-  categoryColor,
   CATEGORY_COLORS,
   CATEGORY_LABELS,
   circleColorExpression,
-  formatRelativeDate,
   isTruncated,
+  popupHtml,
   reportsToFeatureCollection,
-  STATUS_LABELS,
 } from "./mapData";
 
 const MOVE_DEBOUNCE_MS = 300;
 const SOURCE_ID = "reports";
 const LAYER_ID = "reports-circles";
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/** Build the popup HTML from PUBLIC feature properties only (never reporter_id). */
-function popupHtml(props: Record<string, unknown>, now: Date): string {
-  const id = String(props.id ?? "");
-  const category = String(props.category ?? "");
-  const status = String(props.status ?? "");
-  const createdAt = String(props.created_at ?? "");
-
-  const label = CATEGORY_LABELS[category] ?? (category || "Reporte");
-  const statusLabel = STATUS_LABELS[status] ?? status;
-  const color = categoryColor(category);
-  const relative = createdAt ? formatRelativeDate(createdAt, now) : "";
-
-  return `
-    <div class="map-popup">
-      <span class="map-popup__chip" style="background:${color}">${escapeHtml(label)}</span>
-      <span class="map-popup__status">${escapeHtml(statusLabel)}</span>
-      ${relative ? `<time class="map-popup__date">${escapeHtml(relative)}</time>` : ""}
-      ${id ? `<a class="map-popup__link" href="/reportes/${escapeHtml(id)}">Ver detalle</a>` : ""}
-    </div>
-  `;
-}
 
 export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);

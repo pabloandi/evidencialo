@@ -4,7 +4,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CATEGORY_COLORS } from "@/lib/reportLabels";
-import { getPublicReportDetail } from "@/lib/services/reportDetailService";
+import { getSessionRole, isSolver, isStaff } from "@/lib/services/authz";
+import {
+  getPublicReportDetail,
+  type ReportDetailMedia,
+  type SolverAttribution,
+} from "@/lib/services/reportDetailService";
+import ResolutionControls from "@/components/solver/ResolutionControls";
 
 /**
  * Public report detail (step12) — `/reportes/[id]`.
@@ -64,13 +70,86 @@ function formatDate(iso: string): string {
   return `${d.getUTCDate()} de ${MONTHS_ES[d.getUTCMonth()]} de ${d.getUTCFullYear()}`;
 }
 
+// One sanitized media object. Signed URLs from a private bucket can't be
+// optimized by next/image (no stable remote pattern; the URL carries a
+// short-lived token), so a plain <img> is correct here. width/height come from
+// the stored dimensions to reserve space (avoid CLS).
+function MediaItem({ media, alt }: { media: ReportDetailMedia; alt: string }) {
+  if (media.type === "video") {
+    return (
+      <video
+        className="report-detail__hero"
+        src={media.signedUrl}
+        controls
+        playsInline
+        aria-label={alt}
+      />
+    );
+  }
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      className="report-detail__hero"
+      src={media.signedUrl}
+      alt={alt}
+      width={media.width ?? undefined}
+      height={media.height ?? undefined}
+    />
+  );
+}
+
+// "Resuelto por @handle" / "En proceso por @handle" with the verified-type chip.
+// Renders ONLY when an attribution exists (a staff/anonymous action yields null →
+// the caller shows just the status, which is correct, not an error).
+function AttributionBadge({
+  attribution,
+  verb,
+}: {
+  attribution: SolverAttribution;
+  verb: string;
+}) {
+  return (
+    <div className="solver-attribution">
+      {attribution.avatarUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className="solver-attribution__avatar"
+          src={attribution.avatarUrl}
+          alt=""
+          width={32}
+          height={32}
+        />
+      )}
+      <span className="solver-attribution__text">
+        {verb} <span className="solver-attribution__handle">@{attribution.handle}</span>
+      </span>
+      <span className="solver-attribution__chip">
+        ✓ {attribution.typeLabel}
+      </span>
+    </div>
+  );
+}
+
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
   const detail = await loadDetail(id);
   if (!detail) notFound();
 
+  // Resolve the viewer's role SERVER-SIDE so the solver controls never reach an
+  // anonymous/citizen bundle. `getSessionRole` fails closed (role null on any
+  // uncertainty); staff retain resolve powers, so the gate is staff OR solver.
+  const { role } = await getSessionRole();
+  const canResolve = isSolver(role) || isStaff(role);
+
   const chipColor = CATEGORY_COLORS[detail.category] ?? "#868E96";
   const date = formatDate(detail.createdAt);
+
+  // Split media on `kind`: original complaint ("Antes") vs proof of fix ("Después").
+  const beforeMedia = detail.media.filter((m) => m.kind === "report");
+  const afterMedia = detail.media.filter((m) => m.kind === "resolution");
+  // The detail service returns only PROCESSED media, so any resolution item here
+  // is exactly the proof-gate precondition the resolve RPC enforces.
+  const hasProcessedProof = afterMedia.length > 0;
 
   return (
     <main className="report-detail">
@@ -78,35 +157,26 @@ export default async function Page({ params }: PageProps) {
         ← Volver al mapa
       </Link>
 
-      {detail.media.length > 0 && (
-        <div className="report-detail__media">
-          {detail.media.map((m) =>
-            m.type === "video" ? (
-              <video
-                key={m.signedUrl}
-                className="report-detail__hero"
-                src={m.signedUrl}
-                controls
-                playsInline
-                aria-label={detail.categoryLabel}
-              />
-            ) : (
-              // Signed URLs from a private bucket can't be optimized by
-              // next/image (no stable remote pattern; the URL carries a
-              // short-lived token), so a plain <img> is correct here. width/height
-              // come from the stored dimensions to reserve space (avoid CLS).
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                key={m.signedUrl}
-                className="report-detail__hero"
-                src={m.signedUrl}
-                alt={detail.categoryLabel}
-                width={m.width ?? undefined}
-                height={m.height ?? undefined}
-              />
-            ),
-          )}
-        </div>
+      {beforeMedia.length > 0 && (
+        <section className="report-detail__media" aria-label="Antes">
+          <h2 className="report-detail__media-title">Antes</h2>
+          {beforeMedia.map((m) => (
+            <MediaItem key={m.signedUrl} media={m} alt={detail.categoryLabel} />
+          ))}
+        </section>
+      )}
+
+      {afterMedia.length > 0 && (
+        <section className="report-detail__media" aria-label="Después">
+          <h2 className="report-detail__media-title">Después</h2>
+          {afterMedia.map((m) => (
+            <MediaItem
+              key={m.signedUrl}
+              media={m}
+              alt={`Evidencia de resolución — ${detail.categoryLabel}`}
+            />
+          ))}
+        </section>
       )}
 
       <div className="report-detail__meta">
@@ -124,8 +194,23 @@ export default async function Page({ params }: PageProps) {
         )}
       </div>
 
+      {detail.status === "resuelto" && detail.resolvedBy && (
+        <AttributionBadge attribution={detail.resolvedBy} verb="Resuelto por" />
+      )}
+      {detail.status === "en_proceso" && detail.claimedBy && (
+        <AttributionBadge attribution={detail.claimedBy} verb="En proceso por" />
+      )}
+
       {detail.description && (
         <p className="report-detail__description">{detail.description}</p>
+      )}
+
+      {canResolve && (
+        <ResolutionControls
+          reportId={id}
+          status={detail.status}
+          hasProcessedProof={hasProcessedProof}
+        />
       )}
     </main>
   );

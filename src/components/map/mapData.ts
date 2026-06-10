@@ -13,13 +13,14 @@ import type { ExpressionSpecification } from "maplibre-gl";
 import {
   CATEGORY_COLORS,
   CATEGORY_LABELS,
+  SOLVER_TYPE_LABELS,
   STATUS_LABELS,
 } from "@/lib/reportLabels";
 import type { ReportMarker } from "@/lib/services/reportService";
 
 // Re-export the shared labels so existing map imports (`./mapData`) keep working
 // while the source of truth lives in the framework-free `@/lib/reportLabels`.
-export { CATEGORY_COLORS, CATEGORY_LABELS, STATUS_LABELS };
+export { CATEGORY_COLORS, CATEGORY_LABELS, SOLVER_TYPE_LABELS, STATUS_LABELS };
 
 const LNG_MIN = -180;
 const LNG_MAX = 180;
@@ -134,8 +135,11 @@ export function boundsToBboxParam(b: {
  * Project markers into a GeoJSON FeatureCollection for the circle layer.
  *
  * `properties` carries ONLY the public fields the API exposes (id, category,
- * status, created_at). It deliberately never includes `reporter_id` or an
- * address — the popup can render nothing the public read did not already send.
+ * status, created_at) plus the public solver attribution (handle + type for the
+ * claim/resolve actor, when that actor is a verified solver). It deliberately
+ * never includes `reporter_id` or an address — the popup can render nothing the
+ * public read did not already send. Null attribution is carried through as `null`
+ * so the popup builder can branch on "resolved → claimed → none".
  */
 export function reportsToFeatureCollection(
   markers: ReportMarker[],
@@ -150,9 +154,104 @@ export function reportsToFeatureCollection(
         category: m.category,
         status: m.status,
         created_at: m.created_at,
+        claimedByHandle: m.claimedByHandle,
+        claimedByType: m.claimedByType,
+        resolvedByHandle: m.resolvedByHandle,
+        resolvedByType: m.resolvedByType,
       },
     })),
   };
+}
+
+/**
+ * Escape the five HTML-significant characters so user-derived text (a solver
+ * handle or a raw type slug) can be safely interpolated into the popup's raw
+ * HTML string. A crafted handle like `"><img onerror=…>` is rendered inert.
+ */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Read an optional string property: returns the trimmed value, or `null` for a
+ * missing/blank/non-string value. Feature properties round-trip through GeoJSON,
+ * so a `null` attribution arrives as `null` (or, defensively, absent).
+ */
+function optionalProp(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * Build the public solver attribution line for the popup, or `""` when the
+ * report is unattributed.
+ *
+ * Resolution wins over a claim: a `resolvedByHandle` renders "Resuelto por
+ * @handle"; otherwise a `claimedByHandle` renders "En proceso por @handle"
+ * (SCEN-001). Each carries a verified type chip "✓ {label}" where `label` is the
+ * Spanish `SOLVER_TYPE_LABELS` value (falling back to the raw type slug for a
+ * future/unknown type). BOTH the handle and the type label are user-derived and
+ * are HTML-escaped before interpolation.
+ */
+export function attributionHtml(props: Record<string, unknown>): string {
+  const resolvedHandle = optionalProp(props.resolvedByHandle);
+  const claimedHandle = optionalProp(props.claimedByHandle);
+
+  let verb: string;
+  let handle: string;
+  let type: string | null;
+  if (resolvedHandle) {
+    verb = "Resuelto por";
+    handle = resolvedHandle;
+    type = optionalProp(props.resolvedByType);
+  } else if (claimedHandle) {
+    verb = "En proceso por";
+    handle = claimedHandle;
+    type = optionalProp(props.claimedByType);
+  } else {
+    return "";
+  }
+
+  const typeLabel = type ? (SOLVER_TYPE_LABELS[type] ?? type) : null;
+  const chip = typeLabel
+    ? `<span class="map-popup__solver-type">✓ ${escapeHtml(typeLabel)}</span>`
+    : "";
+
+  return `<p class="map-popup__solver">${escapeHtml(verb)} <span class="map-popup__handle">@${escapeHtml(handle)}</span>${chip}</p>`;
+}
+
+/**
+ * Build the full popup HTML from PUBLIC feature properties only (never
+ * `reporter_id`). Pure + framework-free so it is unit-tested here rather than
+ * behind a maplibre canvas. `MapView` passes `feature.properties` and `now`.
+ */
+export function popupHtml(props: Record<string, unknown>, now: Date): string {
+  const id = String(props.id ?? "");
+  const category = String(props.category ?? "");
+  const status = String(props.status ?? "");
+  const createdAt = String(props.created_at ?? "");
+
+  const label = CATEGORY_LABELS[category] ?? (category || "Reporte");
+  const statusLabel = STATUS_LABELS[status] ?? status;
+  const color = categoryColor(category);
+  const relative = createdAt ? formatRelativeDate(createdAt, now) : "";
+  const attribution = attributionHtml(props);
+
+  return `
+    <div class="map-popup">
+      <span class="map-popup__chip" style="background:${color}">${escapeHtml(label)}</span>
+      <span class="map-popup__status">${escapeHtml(statusLabel)}</span>
+      ${relative ? `<time class="map-popup__date">${escapeHtml(relative)}</time>` : ""}
+      ${attribution}
+      ${id ? `<a class="map-popup__link" href="/reportes/${escapeHtml(id)}">Ver detalle</a>` : ""}
+    </div>
+  `;
 }
 
 /**
