@@ -111,8 +111,10 @@ select set_eq(
      where n.nspname = 'public'
        and p.proname = 'reports_in_view'
        and a.mode = 't' $$,
-  $$ values ('id'), ('lng'), ('lat'), ('category'), ('status'), ('created_at') $$,
-  'SCEN-004: TABLE OUT columns are exactly the public set (no reporter_id/address)'
+  $$ values ('id'), ('lng'), ('lat'), ('category'), ('status'), ('created_at'),
+            ('claimed_by_handle'), ('claimed_by_type'),
+            ('resolved_by_handle'), ('resolved_by_type') $$,
+  'SCEN-004: TABLE OUT columns are exactly the public set + solver attribution (no reporter_id/address)'
 );
 
 -- ===========================================================================

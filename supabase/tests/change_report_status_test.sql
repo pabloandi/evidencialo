@@ -130,7 +130,21 @@ select is(
 
 -- ---------------------------------------------------------------------------
 -- SCEN-004 (E7): STAFF en_proceso -> resuelto stamps resolved_at.
+-- The universal proof gate (0015) now requires a processed resolution media for
+-- ANY caller (staff included) to reach `resuelto` — attach one first so this
+-- legitimate staff resolve passes the gate. (Contract update, not a weakening.)
+-- The proof media is a fixture: inserted as superuser (reset role first, then
+-- re-establish the staff identity) so it bypasses report_media RLS, which has no
+-- client INSERT policy — exactly how the report fixture above was seeded.
 -- ---------------------------------------------------------------------------
+reset role;
+insert into public.report_media (report_id, storage_path, type, processing_state, kind)
+  values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaa/proof.jpg', 'image', 'processed', 'resolution');
+
+set local role authenticated;
+select set_config('request.jwt.claims',
+  json_build_object('sub', '33333333-3333-3333-3333-333333333333', 'role', 'authenticated')::text, true);
+
 select count(*) from public.change_report_status('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'resuelto', null);
 
 select isnt(
