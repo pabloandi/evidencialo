@@ -778,6 +778,160 @@ body {
   color: #b02a37;
 }
 
+/* ---- Dispute form (public report detail — "Reportar resolución falsa") ----- */
+.dispute-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+.dispute-form__toggle {
+  align-self: flex-start;
+  margin-top: 1rem;
+  padding: 0.5rem 0.875rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 20%, transparent);
+  border-radius: 0.625rem;
+  cursor: pointer;
+}
+
+.dispute-form__toggle:hover {
+  color: var(--color-ink);
+  border-color: color-mix(in srgb, var(--color-ink) 35%, transparent);
+}
+
+.dispute-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dispute-form__label {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.dispute-form__reason {
+  font: inherit;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  border-radius: 0.625rem;
+  resize: vertical;
+  min-height: 3rem;
+  background: var(--color-bg, #fff);
+  color: var(--color-ink);
+}
+
+.dispute-form__turnstile {
+  margin: 0.25rem 0;
+}
+
+.dispute-form__submit {
+  align-self: flex-start;
+  padding: 0.625rem 1.125rem;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 0.625rem;
+  cursor: pointer;
+}
+
+.dispute-form__submit[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.dispute-form__success {
+  margin-top: 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.dispute-form__error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c92a2a;
+}
+
+/* ---- Dispute review (admin panel — "Disputas abiertas") -------------------- */
+.panel__disputes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel__disputes-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+.panel__disputes-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
+.panel__disputes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.panel-card__link {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.panel-card__link:hover {
+  text-decoration: underline;
+}
+
+.dispute-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+.dispute-review__reason {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--color-ink) 85%, transparent);
+}
+
+.dispute-review__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.dispute-review__error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c92a2a;
+}
+
 /* ---- Panel session header (sign-out) -------------------------------------- */
 .panel__session {
   display: flex;

@@ -1,6 +1,8 @@
 import SignOutButton from "@/components/auth/SignOutButton";
+import DisputeReview from "@/components/panel/DisputeReview";
 import StatusControl from "@/components/panel/StatusControl";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/reportLabels";
+import { getSessionRole, isAdmin } from "@/lib/services/authz";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 /**
@@ -30,6 +32,14 @@ type ReportRow = {
 };
 
 type CategoryRow = { id: string; slug: string };
+
+type DisputeRow = {
+  id: string;
+  reason: string | null;
+  created_at: string;
+  report_id: string;
+  reports: { status: string; categories: { slug: string } | null } | null;
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es-CO", {
@@ -75,6 +85,23 @@ export default async function PanelPage({
 
   const { data: reportsData, error } = await query;
   const reports = (reportsData ?? []) as unknown as ReportRow[];
+
+  // Open disputes are ADMIN-ONLY (the `report_disputes` RLS read policy gates on
+  // `private.is_admin()`). We mirror that here: resolve the role and only QUERY
+  // when the viewer is an admin, so a plain staff session never sees the section
+  // — and the RLS read would return nothing for them anyway (defense in depth).
+  const { role } = await getSessionRole();
+  const viewerIsAdmin = isAdmin(role);
+
+  let openDisputes: DisputeRow[] = [];
+  if (viewerIsAdmin) {
+    const { data: disputesData } = await supabase
+      .from("report_disputes")
+      .select("id, reason, created_at, report_id, reports(status, categories(slug))")
+      .eq("status", "open")
+      .order("created_at", { ascending: true });
+    openDisputes = (disputesData ?? []) as unknown as DisputeRow[];
+  }
 
   // Staff identity for the header. The `(panel)` layout already gated this
   // route, so reading the user here just labels the session and offers sign-out.
@@ -132,6 +159,48 @@ export default async function PanelPage({
           Filtrar
         </button>
       </form>
+
+      {viewerIsAdmin ? (
+        <section className="panel__disputes" aria-label="Disputas abiertas">
+          <h2 className="panel__disputes-title">Disputas abiertas</h2>
+          {openDisputes.length === 0 ? (
+            <p className="panel__disputes-empty">No hay disputas abiertas.</p>
+          ) : (
+            <ul className="panel__disputes-list">
+              {openDisputes.map((d) => {
+                const slug = d.reports?.categories?.slug ?? "";
+                return (
+                  <li key={d.id} className="panel-card panel-card--dispute">
+                    <div className="panel-card__head">
+                      <span className={`panel-card__category cat-${slug}`}>
+                        {CATEGORY_LABELS[slug] ?? slug ?? "—"}
+                      </span>
+                      <a
+                        className="panel-card__link"
+                        href={`/reportes/${d.report_id}`}
+                      >
+                        Ver reporte
+                      </a>
+                      <time
+                        className="panel-card__date"
+                        dateTime={d.created_at}
+                      >
+                        {formatDate(d.created_at)}
+                      </time>
+                    </div>
+
+                    <DisputeReview
+                      disputeId={d.id}
+                      reportId={d.report_id}
+                      reason={d.reason}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {error ? (
         <p className="panel__empty" role="alert">

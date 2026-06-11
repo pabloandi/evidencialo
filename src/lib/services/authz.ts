@@ -41,6 +41,11 @@ export function isStaff(role: AppRole | null): boolean {
   return role === "staff" || role === "admin";
 }
 
+/** Admin role specifically (e.g. dispute review — staff alone is not enough). */
+export function isAdmin(role: AppRole | null): boolean {
+  return role === "admin";
+}
+
 /** Verified solver role (claims/resolves reports with public proof). */
 export function isSolver(role: AppRole | null): boolean {
   return role === "solver";

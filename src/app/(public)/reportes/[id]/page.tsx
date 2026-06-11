@@ -11,6 +11,7 @@ import {
   type SolverAttribution,
 } from "@/lib/services/reportDetailService";
 import ResolutionControls from "@/components/solver/ResolutionControls";
+import DisputeForm from "@/components/report/DisputeForm";
 
 /**
  * Public report detail (step12) — `/reportes/[id]`.
@@ -209,6 +210,10 @@ export default async function Page({ params }: PageProps) {
 
       {detail.description && (
         <p className="report-detail__description">{detail.description}</p>
+      )}
+
+      {detail.status === "resuelto" && (
+        <DisputeForm reportId={id} anonymous={!role} />
       )}
 
       {canResolve && (
