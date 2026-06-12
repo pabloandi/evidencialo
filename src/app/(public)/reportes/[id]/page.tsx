@@ -173,7 +173,13 @@ export default async function Page({ params }: PageProps) {
         </section>
       )}
 
-      {afterMedia.length > 0 && (
+      {/* "Después" proof is PUBLIC only while the report is `resuelto`. After a
+          dispute revert (→ en_proceso) the resolution is no longer a public claim,
+          so the proof of a disputed-as-false fix must disappear for the public
+          (SCEN-007). Solver/staff (`canResolve`) keep seeing it — the resolution
+          upload→resolve flow relies on this section to show freshly-uploaded
+          proof while the report is still en_proceso. */}
+      {afterMedia.length > 0 && (detail.status === "resuelto" || canResolve) && (
         <section className="report-detail__media" aria-label="Después">
           <h2 className="report-detail__media-title">Después</h2>
           {afterMedia.map((m) => (
