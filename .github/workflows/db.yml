@@ -1,19 +1,23 @@
 name: DB Migrations
 
-# Runs only when migrations or Supabase config change — spinning up the local
-# Supabase stack on every push would waste Actions minutes. Validates that all
-# migrations apply cleanly from scratch on the real Supabase stack (the app
-# migrations reference Supabase roles/schemas a vanilla Postgres lacks).
+# Runs only when migrations, pgTAP tests, or Supabase config change — spinning up
+# the local Supabase stack on every push would waste Actions minutes. Validates
+# that all migrations apply cleanly from scratch on the real Supabase stack (the
+# app migrations reference Supabase roles/schemas a vanilla Postgres lacks) AND
+# that the pgTAP suite passes — so a test-only change (e.g. a new RLS assertion)
+# is CI-validated even when no migration changes.
 on:
   push:
     paths:
       - "supabase/migrations/**"
+      - "supabase/tests/**"
       - "supabase/config.toml"
       - "supabase/functions/**"
       - ".github/workflows/db.yml"
   pull_request:
     paths:
       - "supabase/migrations/**"
+      - "supabase/tests/**"
       - "supabase/config.toml"
       - "supabase/functions/**"
 
