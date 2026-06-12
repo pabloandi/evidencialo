@@ -1,4 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// fileDispute generates the dispute id app-side (it inserts with return=minimal
+// and never reads the row back — the SELECT policy is admin-only). Pin
+// `randomUUID` so the generated id is deterministic and assertions stay exact.
+const { MOCK_DISPUTE_ID } = vi.hoisted(() => ({
+  MOCK_DISPUTE_ID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+}));
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return { ...actual, randomUUID: () => MOCK_DISPUTE_ID };
+});
 
 import {
   DisputeAlreadyResolvedError,
@@ -28,8 +39,12 @@ type SbResult =
   | { data: null; error: { code?: string; message?: string } };
 
 /**
- * Build a fake client whose `.from().insert().select().single()` chain records
- * the inserted row and resolves `behavior`.
+ * Build a fake client whose `.from().insert()` records the inserted row and
+ * resolves `behavior` directly (a thenable). The chain intentionally has NO
+ * `.select()`: `report_disputes` has an admin-only SELECT policy, so the filer
+ * inserts with `return=minimal` and the id is generated app-side. If production
+ * code re-introduces `.select()`, `insert()` here returns a plain Promise with
+ * no `.select` method and the call throws — a guard against that regression.
  */
 function makeInsertClient(behavior: SbResult) {
   const calls: Array<{ table: string; row: unknown }> = [];
@@ -38,15 +53,7 @@ function makeInsertClient(behavior: SbResult) {
       return {
         insert(row: unknown) {
           calls.push({ table, row });
-          return {
-            select() {
-              return {
-                single() {
-                  return Promise.resolve(behavior);
-                },
-              };
-            },
-          };
+          return Promise.resolve(behavior);
         },
       };
     },
@@ -73,14 +80,16 @@ function makeRpcClient(behavior: SbResult) {
 }
 
 describe("fileDispute", () => {
-  it("inserts the dispute row and returns the new id on success", async () => {
-    const client = makeInsertClient({ data: { id: DISPUTE_ID }, error: null });
+  it("inserts the dispute row (return=minimal) and returns the app-generated id", async () => {
+    const client = makeInsertClient({ data: null, error: null });
 
     const res = await fileDispute(REPORT_ID, "es falso", USER_ID, client);
 
+    // id is generated app-side (the row is never read back) — randomUUID is mocked.
     expect(res).toEqual({ id: DISPUTE_ID });
     expect(client.__calls[0].table).toBe("report_disputes");
     expect(client.__calls[0].row).toEqual({
+      id: DISPUTE_ID,
       report_id: REPORT_ID,
       reason: "es falso",
       created_by: USER_ID,
@@ -89,11 +98,13 @@ describe("fileDispute", () => {
   });
 
   it("forwards a null reason and null userId (anonymous, no motive)", async () => {
-    const client = makeInsertClient({ data: { id: DISPUTE_ID }, error: null });
+    const client = makeInsertClient({ data: null, error: null });
 
-    await fileDispute(REPORT_ID, null, null, client);
+    const res = await fileDispute(REPORT_ID, null, null, client);
 
+    expect(res).toEqual({ id: DISPUTE_ID });
     expect(client.__calls[0].row).toEqual({
+      id: DISPUTE_ID,
       report_id: REPORT_ID,
       reason: null,
       created_by: null,

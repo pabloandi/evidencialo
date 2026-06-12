@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -7,9 +9,16 @@ import { createServerSupabase } from "@/lib/supabase/server";
  * `report_disputes` table + `resolve_dispute` RPC (migration 0017):
  *
  *   - `fileDispute` — anyone (anon + authenticated) flags a `resuelto` report's
- *     resolution as false/abusive. A plain INSERT; the table's RLS WITH CHECK is
- *     the real boundary (status must be 'open', created_by self/null, the report
- *     must be `resuelto`). The partial unique index coalesces dispute spam.
+ *     resolution as false/abusive. A `return=minimal` INSERT (no chained
+ *     `.select()`); the table's RLS WITH CHECK is the real boundary (status must
+ *     be 'open', created_by self/null, the report must be `resuelto`). The
+ *     partial unique index coalesces dispute spam.
+ *
+ *     IMPORTANT — do NOT chain `.select()` here. `report_disputes` has an
+ *     admin-only SELECT policy, so a non-admin filer cannot read the row back; an
+ *     `INSERT ... RETURNING` (what `.select()` emits) forces a SELECT-policy check
+ *     the filer fails, sinking the whole insert with 42501. We instead generate
+ *     the id app-side and insert with `return=minimal`, then return that id.
  *   - `resolveDispute` — admin-only review (uphold | revert) over the
  *     SECURITY DEFINER RPC, which enforces `private.is_admin()`.
  *
@@ -89,10 +98,6 @@ export type ResolveDisputeResult = {
   report_status: string;
 };
 
-type InsertedRow = {
-  id: string;
-};
-
 type RpcRow = {
   dispute_id: string;
   dispute_status: string;
@@ -109,16 +114,18 @@ export async function fileDispute(
   // default-param value). Tests inject a fake client.
   const db = client ?? (await createServerSupabase());
 
-  const { data, error } = await db
-    .from("report_disputes")
-    .insert({
-      report_id: reportId,
-      reason,
-      created_by: userId,
-      status: "open",
-    })
-    .select("id")
-    .single();
+  // Generate the id ourselves so we can return it without reading the row back
+  // (see the header note: the admin-only SELECT policy forbids the filer from
+  // selecting it, so we MUST insert with `return=minimal` / no `.select()`).
+  const id = randomUUID();
+
+  const { error } = await db.from("report_disputes").insert({
+    id,
+    report_id: reportId,
+    reason,
+    created_by: userId,
+    status: "open",
+  });
 
   if (error) {
     // PostgREST surfaces the Postgres errcode in `error.code`.
@@ -135,8 +142,7 @@ export async function fileDispute(
     throw new Error(`fileDispute failed: ${message || code}`);
   }
 
-  const row = data as InsertedRow;
-  return { id: row.id };
+  return { id };
 }
 
 export async function resolveDispute(

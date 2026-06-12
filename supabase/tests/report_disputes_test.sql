@@ -28,7 +28,7 @@ set local search_path = extensions, public;
 
 grant execute on all functions in schema extensions to anon, authenticated;
 
-select plan(23);
+select plan(24);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as superuser; bypasses RLS)
@@ -206,6 +206,22 @@ select lives_ok(
   $$ insert into public.report_disputes (report_id, status, created_by)
      values ('22222222-0000-0000-0000-000000000002', 'open', 'c0000000-0000-0000-0000-0000000000c1') $$,
   'RLS: a client CAN file an open dispute on a resuelto report');
+
+-- A data-modifying CTE with RETURNING is exactly the shape PostgREST emits when
+-- a client chains `.select()` on an insert. It must be REJECTED for a non-admin
+-- filer: the admin-only SELECT policy forbids reading the new row back, so the
+-- whole insert fails 42501. This is why `fileDispute` inserts with
+-- `return=minimal` (no `.select()`). The plain INSERT in `lives_ok` above never
+-- exercises this read-back path — that gap once shipped a runtime-only bug where
+-- every legitimate dispute filing failed in the browser while pgTAP stayed green.
+select throws_ok(
+  $$ with src as (
+       insert into public.report_disputes (report_id, status, created_by)
+       values ('44444444-0000-0000-0000-000000000004', 'open', 'c0000000-0000-0000-0000-0000000000c1')
+       returning *
+     ) select count(*) from src $$,
+  '42501', null,
+  'RLS: an INSERT ... RETURNING (read-back) by a non-admin filer is rejected (use return=minimal)');
 reset role;
 
 -- ---------------------------------------------------------------------------
