@@ -113,8 +113,9 @@ select set_eq(
        and a.mode = 't' $$,
   $$ values ('id'), ('lng'), ('lat'), ('category'), ('status'), ('created_at'),
             ('claimed_by_handle'), ('claimed_by_type'),
-            ('resolved_by_handle'), ('resolved_by_type') $$,
-  'SCEN-004: TABLE OUT columns are exactly the public set + solver attribution (no reporter_id/address)'
+            ('resolved_by_handle'), ('resolved_by_type'),
+            ('verified_count'), ('anon_count') $$,
+  'SCEN-004: TABLE OUT columns are exactly the public set + solver attribution + corroboration counts (no reporter_id/address)'
 );
 
 -- ===========================================================================
