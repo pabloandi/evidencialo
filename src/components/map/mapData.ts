@@ -158,6 +158,9 @@ export function reportsToFeatureCollection(
         claimedByType: m.claimedByType,
         resolvedByHandle: m.resolvedByHandle,
         resolvedByType: m.resolvedByType,
+        verifiedCount: m.verifiedCount,
+        anonCount: m.anonCount,
+        corroborated: m.corroborated,
       },
     })),
   };
@@ -226,6 +229,30 @@ export function attributionHtml(props: Record<string, unknown>): string {
   return `<p class="map-popup__solver">${escapeHtml(verb)} <span class="map-popup__handle">@${escapeHtml(handle)}</span>${chip}</p>`;
 }
 
+/** Coerce a feature property to a safe non-negative integer (0 on anything odd).
+ * Counts round-trip through GeoJSON as numbers, but a glitchy/absent value must
+ * never render as `NaN`/`undefined` in the popup. */
+function countProp(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/**
+ * Build the public "Corroborado ✓" snippet for the popup, or `""` when the
+ * report is not corroborated. Mirrors `attributionHtml`: pure, framework-free,
+ * and every interpolated value is HTML-escaped (the counts are coerced to safe
+ * non-negative integers first). The verified count is shown alongside the chip
+ * so the popup echoes the detail page's badge.
+ */
+export function corroborationHtml(props: Record<string, unknown>): string {
+  if (props.corroborated !== true) return "";
+
+  const verified = countProp(props.verifiedCount);
+  const countsText = `${verified} ${verified === 1 ? "verificada" : "verificadas"}`;
+
+  return `<p class="map-popup__corroboration"><span class="map-popup__corroborated">Corroborado ✓</span> ${escapeHtml(countsText)}</p>`;
+}
+
 /**
  * Build the full popup HTML from PUBLIC feature properties only (never
  * `reporter_id`). Pure + framework-free so it is unit-tested here rather than
@@ -242,6 +269,7 @@ export function popupHtml(props: Record<string, unknown>, now: Date): string {
   const color = categoryColor(category);
   const relative = createdAt ? formatRelativeDate(createdAt, now) : "";
   const attribution = attributionHtml(props);
+  const corroboration = corroborationHtml(props);
 
   return `
     <div class="map-popup">
@@ -249,6 +277,7 @@ export function popupHtml(props: Record<string, unknown>, now: Date): string {
       <span class="map-popup__status">${escapeHtml(statusLabel)}</span>
       ${relative ? `<time class="map-popup__date">${escapeHtml(relative)}</time>` : ""}
       ${attribution}
+      ${corroboration}
       ${id ? `<a class="map-popup__link" href="/reportes/${escapeHtml(id)}">Ver detalle</a>` : ""}
     </div>
   `;

@@ -4,6 +4,7 @@ import StatusControl from "@/components/panel/StatusControl";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/reportLabels";
 import { getSessionRole, isAdmin } from "@/lib/services/authz";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { isCorroborated } from "@/lib/validation/corroboration";
 
 /**
  * Staff management panel (step13). RSC — the `(panel)` layout already gates this
@@ -29,6 +30,11 @@ type ReportRow = {
   is_visible: boolean;
   description: string | null;
   categories: { slug: string } | null;
+  // Corroboration signal (subsystem A) — drives the priority ordering and the
+  // per-row "N · M" / "Corroborado" marker.
+  verified_count: number;
+  anon_count: number;
+  priority_score: number;
 };
 
 type CategoryRow = { id: string; slug: string };
@@ -76,7 +82,12 @@ export default async function PanelPage({
 
   let query = supabase
     .from("reports")
-    .select("id, status, created_at, is_visible, description, categories(slug)")
+    .select(
+      "id, status, created_at, is_visible, description, verified_count, anon_count, priority_score, categories(slug)",
+    )
+    // Most-corroborated first (priority_score = verified + anon/4), then newest
+    // — staff triage the reports citizens corroborated most before the rest.
+    .order("priority_score", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(ROW_LIMIT);
 
@@ -230,6 +241,21 @@ export default async function PanelPage({
                       Oculto
                     </span>
                   ) : null}
+                  {isCorroborated(r.verified_count) ? (
+                    <span
+                      className="panel-card__corroborated"
+                      title={`${r.verified_count} verificadas · ${r.anon_count} anónimas`}
+                    >
+                      Corroborado ✓
+                    </span>
+                  ) : (
+                    <span
+                      className="panel-card__counts"
+                      title="Verificadas · anónimas"
+                    >
+                      {r.verified_count} · {r.anon_count}
+                    </span>
+                  )}
                   <time className="panel-card__date" dateTime={r.created_at}>
                     {formatDate(r.created_at)}
                   </time>

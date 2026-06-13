@@ -13,6 +13,21 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  // Honor the universal `_`-prefix convention for intentionally-unused bindings
+  // (e.g. `vi.fn(async (..._args: unknown[]) => …)` rest params that exist only
+  // to give the mock the right arity for `.mock.calls[0]` typing).
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

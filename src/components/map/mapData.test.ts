@@ -9,6 +9,7 @@ import {
   CATEGORY_COLORS,
   CATEGORY_LABELS,
   circleColorExpression,
+  corroborationHtml,
   escapeHtml,
   formatRelativeDate,
   isTruncated,
@@ -197,18 +198,35 @@ describe("reportsToFeatureCollection", () => {
     const props = fc.features[0].properties as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(
       [
+        "anonCount",
         "category",
         "claimedByHandle",
         "claimedByType",
+        "corroborated",
         "created_at",
         "id",
         "resolvedByHandle",
         "resolvedByType",
         "status",
+        "verifiedCount",
       ].sort(),
     );
     expect(props).not.toHaveProperty("reporter_id");
     expect(props).not.toHaveProperty("address");
+  });
+
+  it("carries the corroboration counts/flag through to feature properties", () => {
+    const corroborated: ReportMarker = {
+      ...marker,
+      verifiedCount: 3,
+      anonCount: 2,
+      corroborated: true,
+    };
+    const props = reportsToFeatureCollection([corroborated]).features[0]
+      .properties as Record<string, unknown>;
+    expect(props.verifiedCount).toBe(3);
+    expect(props.anonCount).toBe(2);
+    expect(props.corroborated).toBe(true);
   });
 
   it("carries the solver attribution through to feature properties", () => {
@@ -309,6 +327,39 @@ describe("attributionHtml (SCEN-001)", () => {
   });
 });
 
+describe("corroborationHtml (subsystem A)", () => {
+  it("renders the 'Corroborado ✓' chip + verified count when corroborated", () => {
+    const html = corroborationHtml({
+      corroborated: true,
+      verifiedCount: 3,
+      anonCount: 2,
+    });
+    expect(html).toContain("Corroborado ✓");
+    expect(html).toContain("map-popup__corroboration");
+    expect(html).toContain("3 verificadas");
+  });
+
+  it("uses the singular form for exactly one verified confirmation", () => {
+    const html = corroborationHtml({ corroborated: true, verifiedCount: 1 });
+    expect(html).toContain("1 verificada");
+    expect(html).not.toContain("verificadas");
+  });
+
+  it("returns an empty string when the report is not corroborated", () => {
+    expect(corroborationHtml({ corroborated: false, verifiedCount: 2 })).toBe(
+      "",
+    );
+    expect(corroborationHtml({})).toBe("");
+  });
+
+  it("coerces a non-numeric/absent count to 0 rather than NaN", () => {
+    const html = corroborationHtml({ corroborated: true });
+    expect(html).toContain("0 verificadas");
+    expect(html).not.toContain("NaN");
+    expect(html).not.toContain("undefined");
+  });
+});
+
 describe("popupHtml", () => {
   const now = new Date("2026-06-04T12:00:00.000Z");
   const baseProps = {
@@ -320,6 +371,9 @@ describe("popupHtml", () => {
     claimedByType: null,
     resolvedByHandle: null,
     resolvedByType: null,
+    verifiedCount: 0,
+    anonCount: 0,
+    corroborated: false,
   };
 
   it("renders the category chip, status, date and detail link", () => {
@@ -350,6 +404,22 @@ describe("popupHtml", () => {
     expect(html).not.toContain("Resuelto por");
     expect(html).not.toContain("En proceso por");
     expect(html).not.toContain("map-popup__solver");
+  });
+
+  it("includes the corroboration snippet for a corroborated marker", () => {
+    const html = popupHtml(
+      { ...baseProps, verifiedCount: 4, corroborated: true },
+      now,
+    );
+    expect(html).toContain("Corroborado ✓");
+    expect(html).toContain("map-popup__corroboration");
+    expect(html).toContain("4 verificadas");
+  });
+
+  it("shows NO corroboration snippet for a non-corroborated marker", () => {
+    const html = popupHtml(baseProps, now);
+    expect(html).not.toContain("Corroborado");
+    expect(html).not.toContain("map-popup__corroboration");
   });
 });
 

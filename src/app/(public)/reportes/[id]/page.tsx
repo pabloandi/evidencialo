@@ -12,6 +12,8 @@ import {
 } from "@/lib/services/reportDetailService";
 import ResolutionControls from "@/components/solver/ResolutionControls";
 import DisputeForm from "@/components/report/DisputeForm";
+import ValidationControl from "@/components/report/ValidationControl";
+import CorroboratedBadge from "@/components/report/CorroboratedBadge";
 
 /**
  * Public report detail (step12) — `/reportes/[id]`.
@@ -139,14 +141,23 @@ function AttributionBadge({
 
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
-  const detail = await loadDetail(id);
+
+  // Resolve the viewer's role + id SERVER-SIDE so the solver controls never reach
+  // an anonymous/citizen bundle. `getSessionRole` fails closed (role null on any
+  // uncertainty); staff retain resolve powers, so the gate is staff OR solver.
+  // The `userId` is threaded into the detail read as `viewerId` so `hasValidated`
+  // is computed for the signed-in viewer (drives the idempotent confirm CTA).
+  const { role, userId } = await getSessionRole();
+  const canResolve = isSolver(role) || isStaff(role);
+
+  const detail = await loadDetail(id, undefined, userId);
   if (!detail) notFound();
 
-  // Resolve the viewer's role SERVER-SIDE so the solver controls never reach an
-  // anonymous/citizen bundle. `getSessionRole` fails closed (role null on any
-  // uncertainty); staff retain resolve powers, so the gate is staff OR solver.
-  const { role } = await getSessionRole();
-  const canResolve = isSolver(role) || isStaff(role);
+  // Validatable while the report is still actionable (nuevo / en_proceso). After
+  // resolution/discard the corroboration record persists but is read-only.
+  const isValidatable =
+    detail.status === "nuevo" || detail.status === "en_proceso";
+  const hasCorroboration = detail.verifiedCount > 0 || detail.anonCount > 0;
 
   const chipColor = CATEGORY_COLORS[detail.category] ?? "#868E96";
   const date = formatDate(detail.createdAt);
@@ -217,6 +228,26 @@ export default async function Page({ params }: PageProps) {
       {detail.description && (
         <p className="report-detail__description">{detail.description}</p>
       )}
+
+      {/* Citizen corroboration (subsystem A). While validatable the interactive
+          confirm control mounts; once resolved/discarded the badge stays as a
+          read-only record of the corroboration the report earned. */}
+      {isValidatable ? (
+        <ValidationControl
+          reportId={id}
+          anonymous={!role}
+          verifiedCount={detail.verifiedCount}
+          anonCount={detail.anonCount}
+          corroborated={detail.corroborated}
+          hasValidated={detail.hasValidated}
+        />
+      ) : hasCorroboration ? (
+        <CorroboratedBadge
+          verifiedCount={detail.verifiedCount}
+          anonCount={detail.anonCount}
+          corroborated={detail.corroborated}
+        />
+      ) : null}
 
       {detail.status === "resuelto" && (
         <DisputeForm reportId={id} anonymous={!role} />

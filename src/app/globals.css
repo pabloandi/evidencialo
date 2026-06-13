@@ -293,6 +293,28 @@ body {
   background: color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 
+/* Corroboration line in the popup — echoes .map-popup__solver-type's accent
+   pill for the "Corroborado ✓" chip, with the verified count beside it. */
+.map-popup__corroboration {
+  flex-basis: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+.map-popup__corroborated {
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
 .map-popup__link {
   flex-basis: 100%;
   margin-top: 0.125rem;
@@ -736,6 +758,23 @@ body {
   background: color-mix(in srgb, #b02a37 12%, transparent);
 }
 
+/* Corroboration markers (subsystem A) — the accent pill echoes the public badge;
+   the bare "N · M" counts stay quiet for not-yet-corroborated reports. */
+.panel-card__corroborated {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+.panel-card__counts {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
 .panel-card__date {
   margin-left: auto;
   font-size: 0.8125rem;
@@ -858,6 +897,75 @@ body {
 }
 
 .dispute-form__error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c92a2a;
+}
+
+/* ---- Corroboration badge + validation control (subsystem A, chunk A3) ------ */
+.corroborated-badge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* The "Corroborado ✓" chip mirrors .solver-attribution__chip (accent-filled
+   pill) so the corroboration signal reads as the same family of badge. */
+.corroborated-badge__chip {
+  flex: 0 0 auto;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+.corroborated-badge__counts {
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+.validation-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+.validation-control__turnstile {
+  margin: 0.25rem 0;
+}
+
+.validation-control__submit {
+  align-self: flex-start;
+  padding: 0.625rem 1.125rem;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-accent);
+  border: none;
+  border-radius: 0.625rem;
+  cursor: pointer;
+}
+
+.validation-control__submit[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.validation-control__done {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.validation-control__error {
   margin: 0;
   font-size: 0.875rem;
   font-weight: 600;
