@@ -21,6 +21,8 @@ type ReportRow = {
   categories: { slug: string } | null;
   claimed_by?: string | null;
   resolved_by?: string | null;
+  verified_count?: number;
+  anon_count?: number;
 } | null;
 
 type MediaRow = {
@@ -53,11 +55,15 @@ function makeFakeClient(behavior: {
   mediaRows?: MediaRow[];
   solverProfiles?: SolverProfileRow[];
   signError?: (path: string) => boolean;
+  /** When true, the report_validations EXISTS lookup returns a row (the viewer
+   * already corroborated). When false/absent, it returns null. */
+  viewerHasValidated?: boolean;
 }) {
   const signedCalls: Array<{ path: string; ttl: number }> = [];
   const reportEqs: Array<[string, unknown]> = [];
   const mediaEqs: Array<[string, unknown]> = [];
   const solverInIds: string[][] = [];
+  const validationEqs: Array<[string, unknown]> = [];
 
   const client = {
     from(table: string) {
@@ -74,11 +80,15 @@ function makeFakeClient(behavior: {
                 return {
                   // Mirror PostgREST: a selected-but-unset uuid column comes back
                   // as null, never undefined — normalize so the service's
-                  // null-checks behave as they would against the real DB.
+                  // null-checks behave as they would against the real DB. The
+                  // corroboration counters default to 0 (migration-0018 NOT NULL
+                  // DEFAULT 0), so existing fixtures need not set them.
                   data: row
                     ? {
                         claimed_by: null,
                         resolved_by: null,
+                        verified_count: 0,
+                        anon_count: 0,
                         ...row,
                       }
                     : null,
@@ -118,6 +128,27 @@ function makeFakeClient(behavior: {
                   ...r,
                 }));
                 resolve({ data: rows, error: null });
+              },
+            };
+            return builder;
+          },
+        };
+      }
+      if (table === "report_validations") {
+        return {
+          select: () => {
+            const builder = {
+              eq(col: string, val: unknown) {
+                validationEqs.push([col, val]);
+                return builder;
+              },
+              async maybeSingle() {
+                return {
+                  data: behavior.viewerHasValidated
+                    ? { report_id: VISIBLE_ID }
+                    : null,
+                  error: null,
+                };
               },
             };
             return builder;
@@ -167,7 +198,7 @@ function makeFakeClient(behavior: {
         };
       },
     },
-    __inspect: { signedCalls, reportEqs, mediaEqs, solverInIds },
+    __inspect: { signedCalls, reportEqs, mediaEqs, solverInIds, validationEqs },
   };
 
   return client as unknown as Parameters<typeof getPublicReportDetail>[1] & {
@@ -176,6 +207,7 @@ function makeFakeClient(behavior: {
       reportEqs: Array<[string, unknown]>;
       mediaEqs: Array<[string, unknown]>;
       solverInIds: string[][];
+      validationEqs: Array<[string, unknown]>;
     };
   };
 }
@@ -230,6 +262,114 @@ describe("getPublicReportDetail", () => {
     // The signed URL was minted with a long TTL (>= revalidate window).
     expect(client.__inspect.signedCalls[0].path).toBe(`${VISIBLE_ID}/0.jpg`);
     expect(client.__inspect.signedCalls[0].ttl).toBe(86400);
+
+    // Corroboration fields (subsystem A): default counts (0) → not corroborated,
+    // and an anonymous viewer (no viewerId) is never "hasValidated".
+    expect(detail!.verifiedCount).toBe(0);
+    expect(detail!.anonCount).toBe(0);
+    expect(detail!.corroborated).toBe(false);
+    expect(detail!.hasValidated).toBe(false);
+    // No viewerId → the per-viewer validation lookup is NEVER issued.
+    expect(client.__inspect.validationEqs).toHaveLength(0);
+  });
+
+  it("exposes raw counts and DERIVES corroborated from verified_count (subsystem A, A2.3)", async () => {
+    // verified_count >= CORROBORATION_THRESHOLD (3) earns the badge; anon_count
+    // is carried through verbatim and never feeds the badge.
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "nuevo",
+        created_at: "2026-05-01T10:00:00Z",
+        description: "Bache corroborado por vecinos.",
+        categories: { slug: "bache" },
+        verified_count: 3,
+        anon_count: 5,
+      },
+      mediaRows: [],
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client);
+
+    expect(detail!.verifiedCount).toBe(3);
+    expect(detail!.anonCount).toBe(5);
+    expect(detail!.corroborated).toBe(true);
+  });
+
+  it("does NOT corroborate just below threshold; anon_count never bridges the gap", async () => {
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "nuevo",
+        created_at: "2026-05-01T10:00:00Z",
+        description: null,
+        categories: { slug: "bache" },
+        verified_count: 2,
+        anon_count: 99,
+      },
+      mediaRows: [],
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client);
+
+    expect(detail!.verifiedCount).toBe(2);
+    expect(detail!.anonCount).toBe(99);
+    // 2 < 3 → no badge, regardless of the large anonymous count.
+    expect(detail!.corroborated).toBe(false);
+  });
+
+  it("hasValidated is TRUE when the injected viewerId already corroborated (A2.3)", async () => {
+    const VIEWER_ID = "55555555-5555-5555-5555-555555555555";
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "nuevo",
+        created_at: "2026-05-01T10:00:00Z",
+        description: null,
+        categories: { slug: "bache" },
+        verified_count: 1,
+        anon_count: 0,
+      },
+      mediaRows: [],
+      viewerHasValidated: true,
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client, VIEWER_ID);
+
+    expect(detail!.hasValidated).toBe(true);
+    // The validation lookup was scoped to BOTH this report AND this viewer.
+    expect(client.__inspect.validationEqs).toContainEqual([
+      "report_id",
+      VISIBLE_ID,
+    ]);
+    expect(client.__inspect.validationEqs).toContainEqual([
+      "validator_id",
+      VIEWER_ID,
+    ]);
+  });
+
+  it("hasValidated is FALSE when the injected viewerId has NOT corroborated (A2.3)", async () => {
+    const VIEWER_ID = "66666666-6666-6666-6666-666666666666";
+    const client = makeFakeClient({
+      reportRow: {
+        id: VISIBLE_ID,
+        status: "nuevo",
+        created_at: "2026-05-01T10:00:00Z",
+        description: null,
+        categories: { slug: "bache" },
+      },
+      mediaRows: [],
+      viewerHasValidated: false,
+    });
+
+    const detail = await getPublicReportDetail(VISIBLE_ID, client, VIEWER_ID);
+
+    expect(detail!.hasValidated).toBe(false);
+    // The lookup WAS issued (a viewerId was supplied) but matched no row.
+    expect(client.__inspect.validationEqs).toContainEqual([
+      "validator_id",
+      VIEWER_ID,
+    ]);
   });
 
   it("never includes reporter_id (or any PII key) in the returned object (SCEN-005)", async () => {

@@ -178,6 +178,9 @@ describe("reportsToFeatureCollection", () => {
     claimedByType: null,
     resolvedByHandle: null,
     resolvedByType: null,
+    verifiedCount: 0,
+    anonCount: 0,
+    corroborated: false,
   };
 
   it("emits one Point feature per marker with [lng, lat] coordinates", () => {

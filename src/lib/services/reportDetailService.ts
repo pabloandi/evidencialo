@@ -6,6 +6,7 @@ import {
   STATUS_LABELS,
 } from "@/lib/reportLabels";
 import { createAdminSupabase } from "@/lib/supabase/admin";
+import { isCorroborated } from "@/lib/validation/corroboration";
 
 /**
  * Public report detail read (step12) — the citizen-facing detail page's data.
@@ -76,6 +77,17 @@ export type ReportDetail = {
   /** The solver who resolved (→ resuelto), if any and if they have a public
    * solver profile. `null` for unresolved or staff-resolved reports. */
   resolvedBy: SolverAttribution | null;
+  /** Count of VERIFIED (authenticated) corroborations — the badge input
+   * (subsystem A). The author seeds the first verified confirmation. */
+  verifiedCount: number;
+  /** Count of ANONYMOUS corroborations — feeds priority only, NOT the badge. */
+  anonCount: number;
+  /** Whether `verifiedCount` clears the public "Corroborado" badge threshold. */
+  corroborated: boolean;
+  /** Whether the CURRENT viewer (when `viewerId` is supplied) has already
+   * corroborated this report — drives the idempotent confirm CTA. Always `false`
+   * for anonymous viewers (no `viewerId`). */
+  hasValidated: boolean;
 };
 
 /** Row shape from the reports + category lookup (public columns only). */
@@ -89,6 +101,9 @@ type ReportRow = {
   // handle/type are fetched separately below.
   claimed_by: string | null;
   resolved_by: string | null;
+  // Corroboration counters maintained by the migration-0018 triggers.
+  verified_count: number;
+  anon_count: number;
 };
 
 /** Row shape from the processed-media lookup. */
@@ -119,6 +134,7 @@ type SolverProfileRow = {
 export async function getPublicReportDetail(
   id: string,
   client: SupabaseClient = createAdminSupabase(),
+  viewerId?: string | null,
 ): Promise<ReportDetail | null> {
   // SCEN-003: a malformed id can never match a row — short-circuit to a 404
   // (avoids a Postgres `invalid input syntax for type uuid` 500).
@@ -128,7 +144,7 @@ export async function getPublicReportDetail(
   const { data: report, error: reportErr } = await client
     .from("reports")
     .select(
-      "id, status, created_at, description, claimed_by, resolved_by, categories(slug)",
+      "id, status, created_at, description, claimed_by, resolved_by, verified_count, anon_count, categories(slug)",
     )
     .eq("id", id)
     .eq("is_visible", true)
@@ -213,8 +229,31 @@ export async function getPublicReportDetail(
     ? solverById.get(report.resolved_by) ?? null
     : null;
 
+  // Per-viewer corroboration state (subsystem A). Anonymous viewers (no
+  // `viewerId`) always get `false` — no query, and the confirm API is
+  // idempotent so a stale `false` can never double-count. When a viewerId is
+  // supplied, one admin EXISTS read resolves whether they already corroborated.
+  let hasValidated = false;
+  if (viewerId) {
+    const { data: validation, error: validationErr } = await client
+      .from("report_validations")
+      .select("report_id")
+      .eq("report_id", id)
+      .eq("validator_id", viewerId)
+      .maybeSingle<{ report_id: string }>();
+
+    if (validationErr) {
+      throw new Error(
+        `report validation lookup failed: ${validationErr.message}`,
+      );
+    }
+    hasValidated = validation !== null;
+  }
+
   const category = report.categories?.slug ?? "";
   const status = report.status;
+  const verifiedCount = report.verified_count;
+  const anonCount = report.anon_count;
 
   return {
     id: report.id,
@@ -227,5 +266,9 @@ export async function getPublicReportDetail(
     media,
     claimedBy,
     resolvedBy,
+    verifiedCount,
+    anonCount,
+    corroborated: isCorroborated(verifiedCount),
+    hasValidated,
   };
 }

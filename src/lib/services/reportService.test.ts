@@ -247,6 +247,8 @@ describe("listInBbox", () => {
       claimed_by_type: "government",
       resolved_by_handle: null,
       resolved_by_type: null,
+      verified_count: 0,
+      anon_count: 0,
       ...over,
     };
   }
@@ -256,6 +258,8 @@ describe("listInBbox", () => {
       attributedRow({
         resolved_by_handle: "fundacion",
         resolved_by_type: "org",
+        verified_count: 4,
+        anon_count: 2,
       }),
     ]);
 
@@ -273,9 +277,15 @@ describe("listInBbox", () => {
     expect(m.claimedByType).toBe("government");
     expect(m.resolvedByHandle).toBe("fundacion");
     expect(m.resolvedByType).toBe("org");
+    // Corroboration columns (subsystem A): raw counts mapped, badge DERIVED.
+    expect(m.verifiedCount).toBe(4);
+    expect(m.anonCount).toBe(2);
+    expect(m.corroborated).toBe(true); // 4 >= CORROBORATION_THRESHOLD (3)
     // The DB column names never leak onto the marker.
     expect(m).not.toHaveProperty("claimed_by_handle");
     expect(m).not.toHaveProperty("resolved_by_type");
+    expect(m).not.toHaveProperty("verified_count");
+    expect(m).not.toHaveProperty("anon_count");
     // cap+1 sentinel was requested.
     expect(client.__inspect.rpcCalls[0].fn).toBe("reports_in_view");
     expect(client.__inspect.rpcCalls[0].args.p_limit).toBe(2001);
@@ -298,6 +308,19 @@ describe("listInBbox", () => {
     expect(markers[0].claimedByType).toBeNull();
     expect(markers[0].resolvedByHandle).toBeNull();
     expect(markers[0].resolvedByType).toBeNull();
+  });
+
+  it("derives corroborated=false below threshold and carries the raw counts", async () => {
+    const client = makeReadClient([
+      attributedRow({ verified_count: 2, anon_count: 50 }),
+    ]);
+
+    const { markers } = await listInBbox(BBOX, client);
+
+    expect(markers[0].verifiedCount).toBe(2);
+    expect(markers[0].anonCount).toBe(50);
+    // 2 < 3 → no badge; the large anonymous count never counts.
+    expect(markers[0].corroborated).toBe(false);
   });
 
   it("drops the cap+1 sentinel row and flags truncation, preserving the mapping", async () => {

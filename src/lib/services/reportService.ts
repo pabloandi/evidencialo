@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Bbox } from "@/lib/geo";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { createReadSupabase } from "@/lib/supabase/read";
+import { isCorroborated } from "@/lib/validation/corroboration";
 import type {
   ValidMediaInput,
   ValidReportInput,
@@ -202,6 +203,13 @@ export type ReportMarker = {
   claimedByType: string | null;
   resolvedByHandle: string | null;
   resolvedByType: string | null;
+  /** Verified-confirmation count (subsystem A), exposed by `reports_in_view`
+   * since migration 0018. Feeds the map popup's "Corroborado" badge. */
+  verifiedCount: number;
+  /** Anonymous-confirmation count — informational only, NOT a badge input. */
+  anonCount: number;
+  /** Whether `verifiedCount` clears the public "Corroborado" badge threshold. */
+  corroborated: boolean;
 };
 
 /**
@@ -220,6 +228,8 @@ type ReportInViewRow = {
   claimed_by_type: string | null;
   resolved_by_handle: string | null;
   resolved_by_type: string | null;
+  verified_count: number;
+  anon_count: number;
 };
 
 /** Default cap on rows returned per bbox read (overridable per call/test). */
@@ -277,6 +287,9 @@ export async function listInBbox(
     claimedByType: row.claimed_by_type ?? null,
     resolvedByHandle: row.resolved_by_handle ?? null,
     resolvedByType: row.resolved_by_type ?? null,
+    verifiedCount: row.verified_count,
+    anonCount: row.anon_count,
+    corroborated: isCorroborated(row.verified_count),
   }));
 
   return { markers, truncated };
