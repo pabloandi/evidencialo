@@ -22,6 +22,9 @@ type SolverProfileRow = {
   bio: string | null;
   avatar_url: string | null;
   links: Record<string, unknown> | null;
+  resolved_count: number;
+  upheld_count: number;
+  reverted_count: number;
 } | null;
 
 type ResolvedReportRow = {
@@ -53,6 +56,7 @@ function makeFakeClient(behavior: {
   signError?: (path: string) => boolean;
 }) {
   const profileIlikes: Array<[string, unknown]> = [];
+  const profileSelects: string[] = [];
   const reportEqs: Array<[string, unknown]> = [];
   const mediaEqs: Array<[string, unknown]> = [];
   const signedCalls: Array<{ path: string; ttl: number }> = [];
@@ -61,7 +65,8 @@ function makeFakeClient(behavior: {
     from(table: string) {
       if (table === "solver_profiles") {
         return {
-          select: () => {
+          select: (cols: string) => {
+            profileSelects.push(cols);
             const builder = {
               ilike(col: string, val: unknown) {
                 profileIlikes.push([col, val]);
@@ -155,7 +160,7 @@ function makeFakeClient(behavior: {
         };
       },
     },
-    __inspect: { profileIlikes, reportEqs, mediaEqs, signedCalls },
+    __inspect: { profileIlikes, profileSelects, reportEqs, mediaEqs, signedCalls },
   };
 
   return client as unknown as Parameters<
@@ -163,6 +168,7 @@ function makeFakeClient(behavior: {
   >[1] & {
     __inspect: {
       profileIlikes: Array<[string, unknown]>;
+      profileSelects: string[];
       reportEqs: Array<[string, unknown]>;
       mediaEqs: Array<[string, unknown]>;
       signedCalls: Array<{ path: string; ttl: number }>;
@@ -180,6 +186,9 @@ describe("getSolverProfileByHandle", () => {
         bio: "Equipo de obras públicas.",
         avatar_url: "https://cdn.example/a.png",
         links: { web: "https://alcaldia.gov" },
+        resolved_count: 47,
+        upheld_count: 3,
+        reverted_count: 2,
       },
     });
 
@@ -194,6 +203,17 @@ describe("getSolverProfileByHandle", () => {
     expect(profile!.bio).toBe("Equipo de obras públicas.");
     expect(profile!.avatarUrl).toBe("https://cdn.example/a.png");
     expect(profile!.links).toEqual({ web: "https://alcaldia.gov" });
+
+    // Subsystem C (SCEN-007 service half): the three reputation counts map
+    // straight from the snake_case columns onto the camelCase profile shape.
+    expect(profile!.resolvedCount).toBe(47);
+    expect(profile!.upheldCount).toBe(3);
+    expect(profile!.revertedCount).toBe(2);
+
+    // The lookup select asks the DB for the three count columns.
+    expect(client.__inspect.profileSelects).toContainEqual(
+      "id, handle, type, bio, avatar_url, links, resolved_count, upheld_count, reverted_count",
+    );
 
     // The lookup uses a case-insensitive ilike on `handle`.
     expect(client.__inspect.profileIlikes).toContainEqual(["handle", "ALCALDIA"]);
@@ -215,7 +235,7 @@ describe("getSolverProfileByHandle", () => {
   });
 
   it("returns null for an empty/whitespace handle WITHOUT querying", async () => {
-    const client = makeFakeClient({ profileRow: { id: SOLVER_ID, handle: "x", type: "org", bio: null, avatar_url: null, links: {} } });
+    const client = makeFakeClient({ profileRow: { id: SOLVER_ID, handle: "x", type: "org", bio: null, avatar_url: null, links: {}, resolved_count: 0, upheld_count: 0, reverted_count: 0 } });
 
     expect(await getSolverProfileByHandle("", client)).toBeNull();
     expect(await getSolverProfileByHandle("   ", client)).toBeNull();
@@ -242,6 +262,9 @@ describe("getSolverProfileByHandle", () => {
         bio: null,
         avatar_url: null,
         links: null,
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
       },
     });
 
@@ -249,6 +272,11 @@ describe("getSolverProfileByHandle", () => {
 
     expect(profile!.links).toEqual({});
     expect(profile!.typeLabel).toBe("Organización");
+    // A freshly verified solver carries all-zero counts (the empty reputation
+    // case the reliability helper renders as "Sin historial aún").
+    expect(profile!.resolvedCount).toBe(0);
+    expect(profile!.upheldCount).toBe(0);
+    expect(profile!.revertedCount).toBe(0);
   });
 });
 

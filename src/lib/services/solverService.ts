@@ -39,6 +39,14 @@ export type SolverProfile = {
   bio: string | null;
   avatarUrl: string | null;
   links: Record<string, unknown>;
+  /** Standing `resuelto AND is_visible` reports by this solver — equals the
+   * profile wall. Maintained by the migration-0019 recompute triggers. */
+  resolvedCount: number;
+  /** `upheld` disputes against this solver's resolutions — a highlighted SUBSET
+   * of `resolvedCount`, not an additive tally. */
+  upheldCount: number;
+  /** `reverted` disputes against this solver — the negative reliability signal. */
+  revertedCount: number;
 };
 
 /** A before/after thumbnail: a freshly minted signed URL + its media type. */
@@ -67,6 +75,9 @@ type SolverProfileRow = {
   bio: string | null;
   avatar_url: string | null;
   links: Record<string, unknown> | null;
+  resolved_count: number;
+  upheld_count: number;
+  reverted_count: number;
 };
 
 /** Row shape from the resolved-reports lookup (public columns only). */
@@ -111,7 +122,9 @@ export async function getSolverProfileByHandle(
 
   const { data, error } = await client
     .from("solver_profiles")
-    .select("id, handle, type, bio, avatar_url, links")
+    .select(
+      "id, handle, type, bio, avatar_url, links, resolved_count, upheld_count, reverted_count",
+    )
     // Case-insensitive (ilike) + injection-safe (metachars escaped → literal
     // match). The DB's lower(handle) unique index guarantees at most one row.
     .ilike("handle", escapeIlike(trimmed))
@@ -130,6 +143,9 @@ export async function getSolverProfileByHandle(
     bio: data.bio,
     avatarUrl: data.avatar_url,
     links: data.links ?? {},
+    resolvedCount: data.resolved_count,
+    upheldCount: data.upheld_count,
+    revertedCount: data.reverted_count,
   };
 }
 

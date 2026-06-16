@@ -40,6 +40,7 @@ type SolverProfileRow = {
   handle: string;
   type: string;
   avatar_url: string | null;
+  resolved_count: number;
 };
 
 /**
@@ -555,6 +556,7 @@ describe("getPublicReportDetail", () => {
           handle: "alcaldia",
           type: "government",
           avatar_url: "https://cdn.example/a.png",
+          resolved_count: 12,
         },
       ],
     });
@@ -567,6 +569,7 @@ describe("getPublicReportDetail", () => {
       type: "government",
       typeLabel: "Gobierno",
       avatarUrl: "https://cdn.example/a.png",
+      resolvedCount: 12,
     });
     // The attribution query was issued ONCE with the claimed_by id.
     expect(client.__inspect.solverInIds).toEqual([[SOLVER_ID]]);
@@ -610,6 +613,7 @@ describe("getPublicReportDetail", () => {
           handle: "fixmycity",
           type: "org",
           avatar_url: null,
+          resolved_count: 47,
         },
       ],
     });
@@ -621,7 +625,11 @@ describe("getPublicReportDetail", () => {
       type: "org",
       typeLabel: "Organización",
       avatarUrl: null,
+      resolvedCount: 47,
     });
+    // Subsystem C (SCEN-008 service half): the attribution carries the solver's
+    // standing resolved-reports count, mapped from `solver_profiles.resolved_count`.
+    expect(detail!.resolvedBy!.resolvedCount).toBe(47);
     expect(detail!.claimedBy).toEqual(detail!.resolvedBy);
 
     // The media array still mixes both kinds; the UI splits before/after on it.

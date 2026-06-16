@@ -60,6 +60,9 @@ export type SolverAttribution = {
   type: string;
   typeLabel: string;
   avatarUrl: string | null;
+  /** This solver's standing resolved-reports count (subsystem C) — the compact
+   * "· N resueltos" the attribution badge surfaces. Read from `solver_profiles`. */
+  resolvedCount: number;
 };
 
 export type ReportDetail = {
@@ -121,6 +124,7 @@ type SolverProfileRow = {
   handle: string;
   type: string;
   avatar_url: string | null;
+  resolved_count: number;
 };
 
 /**
@@ -201,7 +205,7 @@ export async function getPublicReportDetail(
   if (attribIds.length > 0) {
     const { data: profiles, error: profilesErr } = await client
       .from("solver_profiles")
-      .select("id, handle, type, avatar_url")
+      .select("id, handle, type, avatar_url, resolved_count")
       .in("id", attribIds)
       .returns<SolverProfileRow[]>();
 
@@ -217,6 +221,7 @@ export async function getPublicReportDetail(
           type: p.type,
           typeLabel: SOLVER_TYPE_LABELS[p.type] ?? p.type,
           avatarUrl: p.avatar_url,
+          resolvedCount: p.resolved_count,
         },
       ]),
     );
