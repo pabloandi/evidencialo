@@ -442,6 +442,11 @@ body {
   color: var(--color-ink);
 }
 
+/* Compact "· N resueltos" standing count (subsystem C) — quiet, inline. */
+.solver-attribution__rep {
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+}
+
 .solver-attribution__chip {
   margin-left: auto;
   flex: 0 0 auto;
@@ -928,6 +933,38 @@ body {
   color: color-mix(in srgb, var(--color-ink) 65%, transparent);
 }
 
+/* ---- Solver reputation block (subsystem C, chunk C3) ----------------------
+   Mirrors .corroborated-badge: accent "X% fiable" chip + quiet counts line. */
+.solver-reputation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* The "X% fiable" chip echoes .solver-attribution__chip / .corroborated-badge__chip. */
+.solver-reputation__rate {
+  flex: 0 0 auto;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+.solver-reputation__counts {
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+/* Freshly verified solver (no history) — quiet, muted italic. */
+.solver-reputation__empty {
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
 .validation-control {
   display: flex;
   flex-direction: column;
@@ -1038,6 +1075,78 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   color: #c92a2a;
+}
+
+/* ---- Admin "Solucionadores" reputation signal (subsystem C, chunk C3) ------
+   Mirrors the .panel__disputes family so the admin sections read as one. */
+.panel__solvers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel__solvers-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+/* Empty-list copy (no solvers) — echoes .panel__disputes-empty. */
+.panel__solvers-empty-list {
+  margin: 0;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
+.panel__solvers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row reuses .panel-card; this just tightens the internal spacing. */
+.panel__solvers-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.panel__solvers-handle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.panel__solvers-handle:hover {
+  text-decoration: underline;
+}
+
+/* The "X% fiable" chip echoes .panel-card__corroborated (accent pill). */
+.panel__solvers-rate {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+/* No-history sentinel — quiet, muted italic (mirrors .solver-reputation__empty). */
+.panel__solvers-empty {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+}
+
+.panel__solvers-counts {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
 }
 
 /* ---- Panel session header (sign-out) -------------------------------------- */

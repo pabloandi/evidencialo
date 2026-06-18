@@ -1,7 +1,9 @@
 import SignOutButton from "@/components/auth/SignOutButton";
 import DisputeReview from "@/components/panel/DisputeReview";
+import SolverReputationList from "@/components/panel/SolverReputationList";
 import StatusControl from "@/components/panel/StatusControl";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/reportLabels";
+import { reliability } from "@/lib/reputation/reliability";
 import { getSessionRole, isAdmin } from "@/lib/services/authz";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isCorroborated } from "@/lib/validation/corroboration";
@@ -38,6 +40,23 @@ type ReportRow = {
 };
 
 type CategoryRow = { id: string; slug: string };
+
+/** Raw `solver_profiles` row for the admin reputation signal (subsystem C). */
+type SolverProfileRow = {
+  handle: string;
+  resolved_count: number;
+  upheld_count: number;
+  reverted_count: number;
+};
+
+/** Mapped row passed to `SolverReputationList` (reliability derived per-row). */
+type SolverReputationRow = {
+  handle: string;
+  resolvedCount: number;
+  upheldCount: number;
+  revertedCount: number;
+  reliability: number | null;
+};
 
 type DisputeRow = {
   id: string;
@@ -112,6 +131,42 @@ export default async function PanelPage({
       .eq("status", "open")
       .order("created_at", { ascending: true });
     openDisputes = (disputesData ?? []) as unknown as DisputeRow[];
+  }
+
+  // Admin reputation signal (subsystem C) — `solver_profiles` is world-readable,
+  // so the SAME authenticated client reads it (no service-role needed). Order by
+  // `reverted_count DESC` AT THE DB (the primary, problematic-first signal); the
+  // reliability tiebreak is derived per-row and applied in JS as the SECONDARY
+  // sort (the DB has no reliability column), ascending so the WORSE rate leads
+  // among equal `reverted_count`. Admin-gated exactly like the disputes section.
+  let solverRows: SolverReputationRow[] = [];
+  if (viewerIsAdmin) {
+    const { data: solversData } = await supabase
+      .from("solver_profiles")
+      .select("handle, resolved_count, upheld_count, reverted_count")
+      .order("reverted_count", { ascending: false })
+      .limit(ROW_LIMIT);
+
+    solverRows = ((solversData ?? []) as unknown as SolverProfileRow[])
+      .map((s) => ({
+        handle: s.handle,
+        resolvedCount: s.resolved_count,
+        upheldCount: s.upheld_count,
+        revertedCount: s.reverted_count,
+        reliability: reliability(s.resolved_count, s.reverted_count),
+      }))
+      // Stable secondary sort: equal `reverted_count` → lower reliability first
+      // (a `null` rate — no history — sorts last among equals). `Array.sort` is
+      // stable in modern V8, so the DB's `reverted_count DESC` primary order is
+      // preserved where the comparator returns 0.
+      .sort((a, b) => {
+        if (b.revertedCount !== a.revertedCount) {
+          return b.revertedCount - a.revertedCount;
+        }
+        const ra = a.reliability ?? Number.POSITIVE_INFINITY;
+        const rb = b.reliability ?? Number.POSITIVE_INFINITY;
+        return ra - rb;
+      });
   }
 
   // Staff identity for the header. The `(panel)` layout already gated this
@@ -209,6 +264,19 @@ export default async function PanelPage({
                 );
               })}
             </ul>
+          )}
+        </section>
+      ) : null}
+
+      {viewerIsAdmin ? (
+        <section className="panel__solvers" aria-label="Solucionadores">
+          <h2 className="panel__solvers-title">Solucionadores</h2>
+          {solverRows.length === 0 ? (
+            <p className="panel__solvers-empty-list">
+              No hay solucionadores aún.
+            </p>
+          ) : (
+            <SolverReputationList rows={solverRows} />
           )}
         </section>
       ) : null}

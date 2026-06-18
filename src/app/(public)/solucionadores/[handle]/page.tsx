@@ -11,6 +11,7 @@ import {
   type SolverReportThumb,
   type SolverResolvedReport,
 } from "@/lib/services/solverService";
+import ReputationBlock from "@/components/solver/ReputationBlock";
 
 /**
  * Public solver profile (chunk B2.4) — `/solucionadores/[handle]` (SCEN-008).
@@ -182,6 +183,11 @@ function ProfileHeader({ profile }: { profile: SolverProfile }) {
         <h1 className="solver-profile__handle">@{profile.handle}</h1>
         <span className="solver-profile__type-chip">✓ {profile.typeLabel}</span>
         {profile.bio && <p className="solver-profile__bio">{profile.bio}</p>}
+        <ReputationBlock
+          resolvedCount={profile.resolvedCount}
+          upheldCount={profile.upheldCount}
+          revertedCount={profile.revertedCount}
+        />
       </div>
     </header>
   );

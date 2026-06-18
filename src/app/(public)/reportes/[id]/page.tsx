@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CATEGORY_COLORS } from "@/lib/reportLabels";
+import { plural } from "@/lib/text/plural";
 import { getSessionRole, isSolver, isStaff } from "@/lib/services/authz";
 import {
   getPublicReportDetail,
@@ -131,6 +132,11 @@ function AttributionBadge({
         >
           @{attribution.handle}
         </Link>
+        <span className="solver-attribution__rep">
+          {" "}
+          · {attribution.resolvedCount}{" "}
+          {plural(attribution.resolvedCount, "resuelto", "resueltos")}
+        </span>
       </span>
       <span className="solver-attribution__chip">
         ✓ {attribution.typeLabel}

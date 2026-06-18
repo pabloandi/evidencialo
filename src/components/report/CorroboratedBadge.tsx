@@ -12,15 +12,13 @@
  * The visual idiom mirrors `solver-attribution__chip` (accent-filled pill).
  */
 
+import { plural } from "@/lib/text/plural";
+
 type Props = {
   verifiedCount: number;
   anonCount: number;
   corroborated: boolean;
 };
-
-function plural(count: number, singular: string, pluralForm: string): string {
-  return count === 1 ? singular : pluralForm;
-}
 
 export default function CorroboratedBadge({
   verifiedCount,
