@@ -965,6 +965,285 @@ body {
   color: color-mix(in srgb, var(--color-ink) 55%, transparent);
 }
 
+/* ---- Donation channels — public "Apóyalo" block (subsystem D, chunk D3) ----
+   Accent-tinted cards in the .solver-attribution family; pills + muted text in
+   the established token set. */
+.donation-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+}
+
+.donation-block__title {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-ink);
+}
+
+.donation-block__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+/* One channel card — the accent-tint card idiom from .solver-attribution. */
+.donation-channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.donation-channel__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Rail label pill (Nequi/Daviplata/…) — the accent-filled chip family. */
+.donation-channel__label {
+  flex: 0 0 auto;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+/* Account-kind tag (Ahorros/Corriente) — quiet outline pill. */
+.donation-channel__kind {
+  flex: 0 0 auto;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.donation-channel__value {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  word-break: break-all;
+}
+
+/* Copy pill — mirrors .capture-btn--secondary (accent-outline). */
+.donation-channel__copy {
+  flex: 0 0 auto;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+/* "Abrir PayPal" link styled as a primary pill — sizing tweak only. */
+.donation-channel__open {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.875rem;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* QR — ~150px square, white bg, rounded, subtle border. */
+.donation-channel__qr {
+  flex: 0 0 auto;
+  width: 150px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 0.75rem;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+}
+
+.donation-channel__qr-img,
+.donation-channel__qr svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* ---- Donation channels — owner self-management editor (chunk D3) ---------- */
+.donation-editor-page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.donation-editor-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.donation-editor-page__back {
+  align-self: flex-start;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+  text-decoration: none;
+}
+
+.donation-editor-page__back:hover {
+  color: var(--color-ink);
+}
+
+.donation-editor-page__title {
+  margin: 0;
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-ink);
+}
+
+.donation-editor-page__subtitle {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+.donation-editor-page__empty {
+  margin: 1rem 0 0;
+  font-size: 0.9375rem;
+  font-style: italic;
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+}
+
+.donation-editor {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.donation-editor__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 1rem;
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.donation-editor__type {
+  align-self: flex-start;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-paper);
+  background: var(--color-accent);
+}
+
+.donation-editor__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.donation-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 12rem;
+}
+
+.donation-editor__label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--color-ink) 80%, transparent);
+}
+
+.donation-editor__input,
+.donation-editor__select {
+  font: inherit;
+  padding: 0.625rem 0.75rem;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  border-radius: 0.625rem;
+}
+
+.donation-editor__input:focus,
+.donation-editor__select:focus,
+.donation-editor__file:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.donation-editor__file {
+  font-size: 0.875rem;
+}
+
+.donation-editor__preview {
+  flex: 0 0 auto;
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  padding: 0.375rem;
+  border-radius: 0.625rem;
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 12%, transparent);
+}
+
+.donation-editor__error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #c92a2a;
+}
+
+.donation-editor__status {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.donation-editor__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.donation-editor__save {
+  padding: 0.55rem 1.1rem;
+}
+
+.donation-editor__delete {
+  padding: 0.55rem 1.1rem;
+}
+
+/* Owner "Editar mis canales" affordance on the public profile (chunk D3). */
+.solver-profile__edit-donations {
+  align-self: flex-start;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.875rem;
+  text-decoration: none;
+}
+
 .validation-control {
   display: flex;
   flex-direction: column;

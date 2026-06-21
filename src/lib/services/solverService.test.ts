@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getOwnDonationChannels,
   getSolverProfileByHandle,
   getSolverResolvedReports,
+  isPublishedSolver,
 } from "./solverService";
+
+type DonationChannelRow = {
+  type: "nequi" | "daviplata" | "bancolombia" | "paypal";
+  value: string;
+  account_kind: "ahorros" | "corriente" | null;
+  qr_path: string | null;
+};
 
 // Observable contract for the public solver profile reads (chunk B2.4, SCEN-008)
 // with a MOCKED admin client. Mirrors the reportDetailService test idiom: a fake
@@ -54,12 +63,15 @@ function makeFakeClient(behavior: {
   reportRows?: ResolvedReportRow[];
   thumbsByReport?: Record<string, ThumbRow[]>;
   signError?: (path: string) => boolean;
+  donationRows?: DonationChannelRow[];
 }) {
   const profileIlikes: Array<[string, unknown]> = [];
   const profileSelects: string[] = [];
   const reportEqs: Array<[string, unknown]> = [];
   const mediaEqs: Array<[string, unknown]> = [];
   const signedCalls: Array<{ path: string; ttl: number }> = [];
+  const donationEqs: Array<[string, unknown]> = [];
+  const publicUrlCalls: Array<{ bucket: string; key: string }> = [];
 
   const client = {
     from(table: string) {
@@ -70,6 +82,9 @@ function makeFakeClient(behavior: {
             const builder = {
               ilike(col: string, val: unknown) {
                 profileIlikes.push([col, val]);
+                return builder;
+              },
+              eq() {
                 return builder;
               },
               async maybeSingle() {
@@ -141,10 +156,47 @@ function makeFakeClient(behavior: {
           },
         };
       }
+      if (table === "solver_donation_channels") {
+        return {
+          select: () => {
+            const builder = {
+              eq(col: string, val: unknown) {
+                donationEqs.push([col, val]);
+                return builder;
+              },
+              order() {
+                return builder;
+              },
+              returns() {
+                return builder;
+              },
+              then(
+                resolve: (v: {
+                  data: DonationChannelRow[];
+                  error: null;
+                }) => void,
+              ) {
+                resolve({ data: behavior.donationRows ?? [], error: null });
+              },
+            };
+            return builder;
+          },
+        };
+      }
       throw new Error(`unexpected table ${table}`);
     },
     storage: {
       from(bucket: string) {
+        if (bucket === "donation-qr") {
+          return {
+            getPublicUrl: (key: string) => {
+              publicUrlCalls.push({ bucket, key });
+              return {
+                data: { publicUrl: `https://public.example/donation-qr/${key}` },
+              };
+            },
+          };
+        }
         expect(bucket).toBe("report-media");
         return {
           createSignedUrl: async (path: string, ttl: number) => {
@@ -160,7 +212,15 @@ function makeFakeClient(behavior: {
         };
       },
     },
-    __inspect: { profileIlikes, profileSelects, reportEqs, mediaEqs, signedCalls },
+    __inspect: {
+      profileIlikes,
+      profileSelects,
+      reportEqs,
+      mediaEqs,
+      signedCalls,
+      donationEqs,
+      publicUrlCalls,
+    },
   };
 
   return client as unknown as Parameters<
@@ -171,6 +231,8 @@ function makeFakeClient(behavior: {
       profileSelects: string[];
       reportEqs: Array<[string, unknown]>;
       mediaEqs: Array<[string, unknown]>;
+      donationEqs: Array<[string, unknown]>;
+      publicUrlCalls: Array<{ bucket: string; key: string }>;
       signedCalls: Array<{ path: string; ttl: number }>;
     };
   };
@@ -401,5 +463,250 @@ describe("getSolverResolvedReports", () => {
     const reports = await getSolverResolvedReports(SOLVER_ID, client);
 
     expect(reports).toEqual([]);
+  });
+});
+
+// --- Subsystem D (chunk D3): donation channel reads + qrUrl derivation. ------
+
+describe("getSolverProfileByHandle — donation channels (SCEN-009)", () => {
+  it("maps each channel and derives a PUBLIC qrUrl from qr_path for an uploaded rail; paypal qrUrl is null", async () => {
+    const client = makeFakeClient({
+      profileRow: {
+        id: SOLVER_ID,
+        handle: "maria",
+        type: "individual",
+        bio: null,
+        avatar_url: null,
+        links: {},
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
+      },
+      donationRows: [
+        // A rail WITH an uploaded QR: qr_path includes the `donation-qr/` prefix.
+        {
+          type: "nequi",
+          value: "3001234567",
+          account_kind: null,
+          qr_path: "donation-qr/" + SOLVER_ID + "/nequi.png",
+        },
+        // bancolombia with kind + an uploaded QR.
+        {
+          type: "bancolombia",
+          value: "12345678901",
+          account_kind: "ahorros",
+          qr_path: "donation-qr/" + SOLVER_ID + "/bancolombia.png",
+        },
+        // paypal: never an uploaded path → qrUrl must be null even if qr_path set.
+        {
+          type: "paypal",
+          value: "https://paypal.me/maria",
+          account_kind: null,
+          qr_path: null,
+        },
+      ],
+    });
+
+    const profile = await getSolverProfileByHandle("maria", client);
+    expect(profile).not.toBeNull();
+
+    const channels = profile!.donationChannels;
+    expect(channels).toHaveLength(3);
+
+    const nequi = channels.find((c) => c.type === "nequi")!;
+    expect(nequi.value).toBe("3001234567");
+    expect(nequi.accountKind).toBeNull();
+    // The leading `donation-qr/` prefix is stripped before getPublicUrl.
+    expect(nequi.qrUrl).toBe(
+      `https://public.example/donation-qr/${SOLVER_ID}/nequi.png`,
+    );
+
+    const banco = channels.find((c) => c.type === "bancolombia")!;
+    expect(banco.accountKind).toBe("ahorros");
+    expect(banco.qrUrl).toBe(
+      `https://public.example/donation-qr/${SOLVER_ID}/bancolombia.png`,
+    );
+
+    const paypal = channels.find((c) => c.type === "paypal")!;
+    expect(paypal.value).toBe("https://paypal.me/maria");
+    // PayPal QR is GENERATED, never uploaded → qrUrl is null.
+    expect(paypal.qrUrl).toBeNull();
+
+    // getPublicUrl received the key WITHOUT the bucket prefix (it asks the bucket).
+    expect(client.__inspect.publicUrlCalls).toContainEqual({
+      bucket: "donation-qr",
+      key: `${SOLVER_ID}/nequi.png`,
+    });
+    // The channels read was scoped to this solver.
+    expect(client.__inspect.donationEqs).toContainEqual(["solver_id", SOLVER_ID]);
+  });
+
+  it("DROPS a malformed paypal row (value not a paypal.me URL) so it never reaches the SVG path", async () => {
+    // The DB CHECK on `value` is length-only; a malformed paypal row CAN exist
+    // (direct RPC/import). It must be dropped at the read layer, else paypalQrSvg
+    // throws in the async RSC and 500s the whole public profile.
+    const client = makeFakeClient({
+      profileRow: {
+        id: SOLVER_ID,
+        handle: "maria",
+        type: "individual",
+        bio: null,
+        avatar_url: null,
+        links: {},
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
+      },
+      donationRows: [
+        { type: "nequi", value: "3001234567", account_kind: null, qr_path: null },
+        // Malformed paypal: not the normalized https://paypal.me/<user> shape.
+        {
+          type: "paypal",
+          value: "https://evil.example/phish",
+          account_kind: null,
+          qr_path: null,
+        },
+      ],
+    });
+
+    const profile = await getSolverProfileByHandle("maria", client);
+    const channels = profile!.donationChannels;
+    // The good rail survives; the malformed paypal is gone.
+    expect(channels.map((c) => c.type)).toEqual(["nequi"]);
+    expect(channels.find((c) => c.type === "paypal")).toBeUndefined();
+  });
+
+  it("yields qrUrl=null for a qr_path missing the donation-qr/ bucket prefix (legacy/garbage)", async () => {
+    const client = makeFakeClient({
+      profileRow: {
+        id: SOLVER_ID,
+        handle: "maria",
+        type: "individual",
+        bio: null,
+        avatar_url: null,
+        links: {},
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
+      },
+      donationRows: [
+        // A garbage/legacy qr_path without the expected bucket prefix.
+        {
+          type: "nequi",
+          value: "3001234567",
+          account_kind: null,
+          qr_path: "report-media/secret/x.png",
+        },
+      ],
+    });
+
+    const profile = await getSolverProfileByHandle("maria", client);
+    const nequi = profile!.donationChannels.find((c) => c.type === "nequi")!;
+    expect(nequi.qrUrl).toBeNull();
+  });
+
+  it("yields qrUrl=null for a rail with no uploaded qr_path", async () => {
+    const client = makeFakeClient({
+      profileRow: {
+        id: SOLVER_ID,
+        handle: "maria",
+        type: "individual",
+        bio: null,
+        avatar_url: null,
+        links: {},
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
+      },
+      donationRows: [
+        { type: "nequi", value: "3001234567", account_kind: null, qr_path: null },
+      ],
+    });
+
+    const profile = await getSolverProfileByHandle("maria", client);
+    expect(profile!.donationChannels[0].qrUrl).toBeNull();
+    // No public-url derivation attempted for a missing path.
+    expect(client.__inspect.publicUrlCalls).toHaveLength(0);
+  });
+
+  it("exposes an empty channel list for a solver with none (block renders nothing)", async () => {
+    const client = makeFakeClient({
+      profileRow: {
+        id: SOLVER_ID,
+        handle: "maria",
+        type: "individual",
+        bio: null,
+        avatar_url: null,
+        links: {},
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
+      },
+      donationRows: [],
+    });
+
+    const profile = await getSolverProfileByHandle("maria", client);
+    expect(profile!.donationChannels).toEqual([]);
+  });
+});
+
+describe("getOwnDonationChannels (SCEN-011)", () => {
+  it("returns the user's own channels scoped by their id", async () => {
+    const client = makeFakeClient({
+      donationRows: [
+        {
+          type: "nequi",
+          value: "3001234567",
+          account_kind: null,
+          qr_path: "donation-qr/" + SOLVER_ID + "/nequi.png",
+        },
+      ],
+    });
+
+    const channels = await getOwnDonationChannels(SOLVER_ID, client);
+
+    expect(channels).toHaveLength(1);
+    expect(channels[0].type).toBe("nequi");
+    expect(channels[0].qrUrl).toBe(
+      `https://public.example/donation-qr/${SOLVER_ID}/nequi.png`,
+    );
+    // Scoped to the caller's own id — never a handle, never another solver.
+    expect(client.__inspect.donationEqs).toContainEqual(["solver_id", SOLVER_ID]);
+  });
+
+  it("returns [] for an empty user id without querying", async () => {
+    const client = makeFakeClient({ donationRows: [] });
+    expect(await getOwnDonationChannels("", client)).toEqual([]);
+    expect(client.__inspect.donationEqs).toHaveLength(0);
+  });
+});
+
+describe("isPublishedSolver (SCEN-011 owner gate)", () => {
+  it("is true when a solver_profiles row exists for the user", async () => {
+    const client = makeFakeClient({
+      profileRow: {
+        id: SOLVER_ID,
+        handle: "maria",
+        type: "individual",
+        bio: null,
+        avatar_url: null,
+        links: {},
+        resolved_count: 0,
+        upheld_count: 0,
+        reverted_count: 0,
+      },
+    });
+
+    expect(await isPublishedSolver(SOLVER_ID, client)).toBe(true);
+  });
+
+  it("is false when the user has no solver profile (a non-solver → empty state)", async () => {
+    const client = makeFakeClient({ profileRow: null });
+    expect(await isPublishedSolver(SOLVER_ID, client)).toBe(false);
+  });
+
+  it("is false for an empty user id without querying", async () => {
+    const client = makeFakeClient({ profileRow: null });
+    expect(await isPublishedSolver("", client)).toBe(false);
   });
 });

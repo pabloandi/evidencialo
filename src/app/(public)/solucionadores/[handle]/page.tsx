@@ -3,6 +3,7 @@ import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { getSessionRole } from "@/lib/services/authz";
 import { CATEGORY_COLORS } from "@/lib/reportLabels";
 import {
   getSolverProfileByHandle,
@@ -11,6 +12,7 @@ import {
   type SolverReportThumb,
   type SolverResolvedReport,
 } from "@/lib/services/solverService";
+import DonationBlock from "@/components/solver/DonationBlock";
 import ReputationBlock from "@/components/solver/ReputationBlock";
 
 /**
@@ -159,7 +161,13 @@ function ReportCard({ report }: { report: SolverResolvedReport }) {
   );
 }
 
-function ProfileHeader({ profile }: { profile: SolverProfile }) {
+function ProfileHeader({
+  profile,
+  isOwner,
+}: {
+  profile: SolverProfile;
+  isOwner: boolean;
+}) {
   return (
     <header className="solver-profile__header">
       {profile.avatarUrl ? (
@@ -188,6 +196,18 @@ function ProfileHeader({ profile }: { profile: SolverProfile }) {
           upheldCount={profile.upheldCount}
           revertedCount={profile.revertedCount}
         />
+        {/* "Apóyalo" block — renders nothing when the solver has no channels. */}
+        <DonationBlock channels={profile.donationChannels} />
+        {/* Owner-only affordance: link to self-management. Visible only when the
+            viewer IS this solver. */}
+        {isOwner && (
+          <Link
+            href="/mi-perfil/donaciones"
+            className="capture-btn capture-btn--secondary solver-profile__edit-donations"
+          >
+            Editar mis canales
+          </Link>
+        )}
       </div>
     </header>
   );
@@ -199,7 +219,12 @@ export default async function Page({ params }: PageProps) {
   // SCEN-008: an unknown handle 404s — never render an empty shell.
   if (!profile) notFound();
 
-  const reports = await getSolverResolvedReports(profile.id);
+  const [reports, { userId }] = await Promise.all([
+    getSolverResolvedReports(profile.id),
+    getSessionRole(),
+  ]);
+  // The owner sees an "Editar mis canales" affordance; everyone else does not.
+  const isOwner = userId != null && userId === profile.id;
 
   return (
     <main className="solver-profile">
@@ -207,7 +232,7 @@ export default async function Page({ params }: PageProps) {
         ← Volver al mapa
       </Link>
 
-      <ProfileHeader profile={profile} />
+      <ProfileHeader profile={profile} isOwner={isOwner} />
 
       <section className="solver-profile__resolved" aria-label="Reportes resueltos">
         <h2 className="solver-profile__section-title">
